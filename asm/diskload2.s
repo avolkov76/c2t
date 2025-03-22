@@ -1,31 +1,31 @@
 ;diskload2.s
 
-; apple vectors
+.include "apple2.inc"
+.include "disk2.inc"
+.include "dos33.inc"
+.include "diskload1.inc"
+.include "diskload2.inc"
+.include "diskload3.inc"
 
-cout	=	$FDED		; character out sub
-crout	=	$FD8E		; CR out sub
-prbyte	=	$FDDA 		; print byte in hex
-tapein	=	$C060		; read tape interface
-warm	=	$FF69		; back to monitor
-clear	=	$FC58		; clear screen
-movecur	=	$FB5B		; move cursor to ch,a
-dos	=	$9D84
-asrom	=	$9D72
-locrpl	=	$3E3		; locate RWTS paramlist jsr
-rwts	=	$3D9		; RWTS jsr
-cleos	=	$FC42		; clear to end of screen
-init	=	$A54F
-motoroff=	$C088		; Turn drive motor off
-motoron	=	$C089		; Turn drive motor on
-reboot	=	$FAA6		; reboot machine
-bell	=	$FBDD		; ding
-rdkey	=	$FD0C		; read key
+cout	=	COUT		; character out sub
+crout	=	CROUT		; CR out sub
+prbyte	=	PRBYTE 		; print byte in hex
+warm	=	MONZ		; back to monitor
+clear	=	CR		; clear screen
+movecur	=	TABV		; move cursor to ch,a
+cleos	=	CLREOP		; clear to end of screen (page)
+reboot	=	PWRUP		; reboot machine
+bell	=	BELL2		; ding
+rdkey	=	RDKEY		; read key
+
+locrpl	=	DOSRWTSIOB	; locate RWTS paramlist jsr
+rwts	=	DOSRWTSCALL	; RWTS jsr
+locfmpl	=	DOSFMPRMLIST	; locate DOS FileMan paramlist
+dosfm	=	DOSFMCALL	; DOS FileMan entry point thunk
 
 ; my vectors
 
-;print	=	$90CE		; from diskload.s
-readtape=	$9000
-inflate	=	$9B00
+readtape=	diskload1
 
 ; zero page parameters
 
@@ -40,30 +40,28 @@ trkcnt	=	$09		; track counter (0-6)
 pointer	=	$0A		; pointer LSB/MSB
 prtptr	=	$0C		; pointer LSB/MSB
 fmptr	=	$0E		; file manager pointer
-inf_zp	=	$10		; inflate vars (10)
+;inf_zp	=	$10		; inflate vars (10); see diskload3.inc
 temp	=	$1E		; temp var
-ch	=	$24		; cursor horizontal
-preg	=	$48		; mon p reg
+ch	=	CH		; cursor horizontal
+preg	=	STATUS		; mon p reg
 
 ; other vars
 
-org	=	$9700		; should be $9700
 invsp	=	$60		; inverse space for draw
 data	=	$1000		; 7 track dump from inflate
-boot1o	=	$96D0		; tape loaded boot 1 location
-boot1	=	$3D0		; target boot 1 location
+boot1	=	DOSP3VECS	; target boot 1 location
 cmpbuf	=	$9200		; buffer for sector check
 count	=	$900
 
-        .org	org
+	.org	diskload2_org
 
-	ldx	#0		; move 9cd0 to 3d0
+	ldx	#0		; move 96d0 to 3d0
 move1:
-	lda	boot1o,x
+	lda	dos33vecs,x
 	sta	boot1,x
 	inx
-	cpx	#48
-	bne	move1		; branch on positive (0-127)
+	cpx	#DOSP3VECSIZE
+	bne	move1
 patch:
 	lda	#$B3		; hack since chksum could not be written to C000
 	sta	$BFFF		; chksum was written do BFFF
@@ -134,7 +132,7 @@ format:				; format the diskette
 ;	jmp	endformat
 
 ;;; file manager format (works!)
-	jsr	$3DC		; load up Y and A
+	jsr	locfmpl		; load up Y and A
 	sty	fmptr
 	sta	fmptr+1
 
@@ -166,7 +164,7 @@ format:				; format the diskette
 	ldy	#$0D
 	sta	(fmptr),y
 
-	jsr	$3D6		; doit!
+	jsr	dosfm		; doit!
 
 	ldy	#$0A		; return code
 	lda	(fmptr),y
@@ -279,21 +277,21 @@ inf:
 
 	ldx	temp
 	lda	infdata+0,x	;src lsb
-	sta	inf_zp+0
+	sta	inflate_zp+0
 	lda	infdata+1,x	;src msb
-	sta	inf_zp+1
+	sta	inflate_zp+1
 	lda	#<data		;dst lsb
-	sta	inf_zp+2
+	sta	inflate_zp+2
 	lda	#>data		;dst msb
-	sta	inf_zp+3
+	sta	inflate_zp+3
 
 	jsr	inflate
 
 	lda	#$00		;dst end +1 lsb
-	cmp	inf_zp+2
+	cmp	inflate_zp+2
 	bne	error
 	lda	#$80		;dst end +1 msb
-	cmp	inf_zp+3
+	cmp	inflate_zp+3
 	bne	error
 
 ;;;begin track loop (7)

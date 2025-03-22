@@ -1,12 +1,15 @@
 ;diskload9600.s
 
-org	=	$9000		; should be $9000
-cout	=	$FDED		; character out sub
-crout	=	$FD8E		; CR out sub
-prbyte	=	$FDDA 		; print byte in hex
-tapein	=	$C060		; read tape interface
-warm	=	$FF69		; back to monitor
-clear	=	$FC58		; clear screen
+.include "apple2.inc"
+.include "diskload1.inc"
+.include "diskload2.inc"
+
+cout	=	COUT		; character out sub
+crout	=	CROUT		; CR out sub
+prbyte	=	PRBYTE 		; print byte in hex
+tapein	=	TAPEIN		; read tape interface
+warm	=	MONZ		; back to monitor
+clear	=	CR		; clear screen
 endbas	=	$80C
 target	=	$1000
 
@@ -34,9 +37,9 @@ phase1:
 	ldy	#>loadm
 	jsr	print
 				; diskload2 ORG
-	lda	#$D0		; store begin location LSB
+	lda	#<dos33vecs	; store begin location LSB
 	sta	begload
-	lda	#$96		; store begin location MSB
+	lda	#>dos33vecs	; store begin location MSB
 	sta	begload+1
 				; end of DOS + 1 for comparison
 	lda	#$00		; store end location LSB
@@ -45,13 +48,13 @@ phase1:
 	sta	endload+1
 
 	jsr	readtape	; get the code
-	jmp	$9700		; run it
+	jmp	diskload2	; run it
 loadm:
 	.byte	"LOADING INSTA-DISK, ETA "
 loadsec:			; 10 bytes for "XX SEC. ",$00
 	.byte	0,0,0,0,0,0,0,0,0,0
 moved:
-	.org	org		; $9000
+	.org	diskload1_org	; $9000 for now
 readtape:
 	lda	begload		; load begin LSB location
 	sta	store+1		; store it

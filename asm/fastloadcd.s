@@ -1,18 +1,21 @@
 ;fastloadcd.s
 
-org	=	$BE80		; should be $BE80
-cout	=	$FDED		; character out sub
-crout	=	$FD8E		; CR out sub
-prbyte	=	$FDDA 
-warm	=	$FF69		; back to monitor
-tapein	=	$C060
+.include "apple2.inc"
+.include "inflate.inc"
+.include "fastload.inc"
+
+cout	=	COUT		; character out sub
+crout	=	CROUT		; CR out sub
+prbyte	=	PRBYTE 		; print byte in hex
+warm	=	MONZ		; back to monitor
+tapein	=	TAPEIN		; read tape interface
+
 pointer	=	$06
 endbas	=	$80C
 ;target	=	$1000
 target	=	$801
 chksum	=	$00
-inflate	=	$BA00
-inf_zp	=	$0
+;inf_zp	=	$0		; see inflate.inc
 
 start:
         .org	endbas
@@ -29,7 +32,7 @@ move2:	lda	moved+256,x
 	bpl	move2		; only 128 bytes to move
 	jmp	fast
 moved:
-	.org	org
+	.org	fastload_org
 fast:
 	lda	#<loadm
 	ldy	#>loadm
@@ -134,21 +137,21 @@ inf:
 	jsr	print
 
 	lda	inf_src		;src lsb
-	sta	inf_zp+0
+	sta	inflate_zp+0
 	lda	inf_src+1	;src msb
-	sta	inf_zp+1
+	sta	inflate_zp+1
 	lda	inf_dst		;dst lsb
-	sta	inf_zp+2
+	sta	inflate_zp+2
 	lda	inf_dst+1	;dst msb
-	sta	inf_zp+3
+	sta	inflate_zp+3
 
 	jsr	inflate
 
 	lda	inf_end		;dst end +1 lsb
-	cmp	inf_zp+2
+	cmp	inflate_zp+2
 	bne	error
 	lda	inf_end+1	;dst end +1 msb
-	cmp	inf_zp+3
+	cmp	inflate_zp+3
 	bne	error
 runit:
 	lda	warm_flag	; if warm_flag = 1 warm boot

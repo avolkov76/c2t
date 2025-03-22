@@ -15,12 +15,10 @@
 
 ; changes
 
+.include "inflate.inc"
+
 ;EFF
 .define	equ	=
-
-inflate		=	$BA00
-inflate_zp	=	$0
-inflate_data	=	$BC00
 
 ; Pointer to compressed data
 inputPointer                    equ	inflate_zp    ; 2 bytes

@@ -17,12 +17,10 @@
 
 ; changes
 
+.include "diskload3.inc"
+
 ;EFF
 .define	equ	=
-
-inflate		=	$9B00
-inflate_zp	=	$10
-inflate_data	=	$9200
 
 ; Pointer to compressed data
 inputPointer                    equ	inflate_zp    ; 2 bytes
