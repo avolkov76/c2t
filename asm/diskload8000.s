@@ -3,6 +3,7 @@
 .include "apple2.inc"
 .include "diskload1.inc"
 .include "diskload2.inc"
+.include "diskload3.inc"
 
 cout	=	COUT		; character out sub
 crout	=	CROUT		; CR out sub
@@ -169,3 +170,5 @@ chkm:	.asciiz	"CHKSUM "
 okm:	.asciiz	"OK"
 errm:	.asciiz	"ERROR"
 end:
+
+.assert	* <= inflate_data, warning, "diskload1 too large; overruns inflate data segment"

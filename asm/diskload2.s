@@ -7,6 +7,9 @@
 .include "diskload2.inc"
 .include "diskload3.inc"
 
+; XXX: I cannot make .ifdef or .ifconst work properly with .define. It must be a symbol.
+USE_RWTS_FORMAT = 1
+
 cout	=	COUT		; character out sub
 crout	=	CROUT		; CR out sub
 prbyte	=	PRBYTE 		; print byte in hex
@@ -18,7 +21,7 @@ reboot	=	PWRUP		; reboot machine
 bell	=	BELL2		; ding
 rdkey	=	RDKEY		; read key
 
-locrpl	=	DOSRWTSIOB	; locate RWTS paramlist jsr
+locrpl	=	DOSRWTSIOB	; locate RWTS default IOB jsr
 rwts	=	DOSRWTSCALL	; RWTS jsr
 locfmpl	=	DOSFMPRMLIST	; locate DOS FileMan paramlist
 dosfm	=	DOSFMCALL	; DOS FileMan entry point thunk
@@ -37,7 +40,7 @@ trknum	=	$06		; loop var
 segcnt	=	$07		; loop var
 buffer	=	$08		; MSB of RWTS buffer
 trkcnt	=	$09		; track counter (0-6)
-pointer	=	$0A		; pointer LSB/MSB
+iobptr	=	$0A		; RWTS IOB pointer LSB/MSB
 prtptr	=	$0C		; pointer LSB/MSB
 fmptr	=	$0E		; file manager pointer
 ;inf_zp	=	$10		; inflate vars (10); see diskload3.inc
@@ -52,6 +55,11 @@ data	=	$1000		; 7 track dump from inflate
 boot1	=	DOSP3VECS	; target boot 1 location
 cmpbuf	=	$9200		; buffer for sector check
 count	=	$900
+
+d2slot	=	6		; for now, presume slot 6
+d2slotio=	d2slot * $10	; for now, presume slot 6 I/O offset
+d2drvno	=	1		; for now, presume drive 1
+volnum	=	254		; volume number we will use (unlikely to ever change)
 
 	.org	diskload2_org
 
@@ -89,26 +97,55 @@ start:
 	ldy	#>left
 	jsr	print
 
+initdos:
+	; Init some non-obvious DOS locations so we start in guaranteed known state,
+	; since none of boot 1 or boot 2 executed, and data could be anything.
+	ldy	#d2slot
+	lda	#40*2		; head position just beyond max (track 80)
+	sta	RWTSD1CURTRK,y	; init drive 1 head pos for slot
+	sta	RWTSD2CURTRK,y	; init drive 2 head pos for slot
+	; Init the otherwise untouched RWTS spin-up delay counter LSB to
+	; ensure deterministic timing from this point on.
+	lda	#1		; delay counter LSB=1
+	sta	RWTSDLY		; set delay counter LSB (uninited by RWTS)
+
 setupiob:
-	jsr	locrpl		; locate rwts paramlist
-	sty	pointer		; and save pointer
-	sta	pointer+1
+	jsr	locrpl		; locate rwts default IOB
+	sty	iobptr		; and save pointer
+	sta	iobptr+1
 
-	lda	#1		; table type
-	ldy	#0		; offset in RWTS
-	sta	(pointer),y	; write it to RWTS
+	lda	#1		; IOB version, must be 1
+	ldy	#IOB::ver	; offset in IOB
+	sta	(iobptr),y	; write it to IOB
 
-	lda	#6 * 16		; slot 6
-	ldy	#1		; offset in RWTS
-	sta	(pointer),y	; write it to RWTS
+	lda	#d2slotio	; disk II slot I/O offset (slot# * $10)
+	ldy	#IOB::slotio	; slot to access in IOB
+	sta	(iobptr),y	; write it to IOB
+	; Must init; presume no drive was actually accessed in last 2 seconds.
+	; set to the slot we want to use to suppress slot switch logic in RWTS
+	ldy	#IOB::lstslot	; last slot accessed in IOB
+	sta	(iobptr),y	; write it to IOB
 
-	lda	#1		; drive number
-	ldy	#2		; offset in RWTS
-	sta	(pointer),y	; write it to RWTS
+	lda	#d2drvno	; drive number
+	ldy	#IOB::drvnum	; drive to access in IOB
+	sta	(iobptr),y	; write it to IOB
+	; Must init; presume no drive was actually accessed in last 2 seconds.
+	; set to the drive we want to use to suppress drive switch logic in RWTS
+	ldy	#IOB::lstdrv	; last drive accessed in IOB
+	sta	(iobptr),y	; write it to IOB
 
-	lda	#254		; volume number
-	ldy	#3		; offset in RWTS
-	sta	(pointer),y	; write it to RWTS
+	lda	#volnum		; volume number
+	ldy	#IOB::volnum	; volume to access in IOB
+	sta	(iobptr),y	; write it to IOB
+	; Must init; presume no drive was actually accessed in last 2 seconds.
+	; TODO: last volume number should actually be set by RWTS. When not formatting,
+	; the last volume number will be set by issuing a read(1) over track 0.
+	ldy	#IOB::lstvol	; last volume accessed in IOB
+	sta	(iobptr),y	; write it to IOB
+
+	lda	#0		; 256 bytes/sector
+	ldy	#IOB::secsize	; sector size in IOB
+	sta	(iobptr),y	; write it to IOB
 
 format:				; format the diskette
 	lda	infdata+20	; check noformat flag
@@ -119,68 +156,84 @@ format:				; format the diskette
 	ldy	#>formatm
 	jsr	print
 
-;;; RWTS format (issues)
-;	lda	#4		; format(4) command
-;	ldy	#$0C		; offset in RWTS
-;	sta	(pointer),y	; write it to RWTS
+.ifdef USE_RWTS_FORMAT
+;;; RWTS format (works here)
+	lda	#IOBCMD::format	; format(4) command
+	ldy	#IOB::command	; offset in IOB
+	sta	(iobptr),y	; write it to IOB
 
-;	jsr	locrpl		; locate rwts paramlist
-;	jsr	rwts		; do it!
-;	bcs	formaterror
-;	lda	#0
-;	sta	preg		; fix p reg so mon is happy
-;	jmp	endformat
+	;ldy	iobptr		; load IOB pointer
+	;lda	iobptr+1	; equivalent to DOSDEFIOB call
+	jsr	locrpl		; locate rwts IOB
+	jsr	rwts		; do it!
+	bcs	formaterror
 
+	; Incur the seek to 0 penalty now instead of when writing first data block
+	lda	#0		; track 0
+	ldy	#IOB::trknum	; offset in IOB
+	sta	(iobptr),y	; write it to IOB
+
+	lda	#IOBCMD::seek	; seek(0) command
+	ldy	#IOB::command	; offset in IOB
+	sta	(iobptr),y	; write it to IOB
+
+	jsr	locrpl		; locate rwts IOB
+	jsr	rwts		; invoke RWTS
+	bcs	formaterror
+
+	; XXX: I do not know which Apple II models need this STATUS patch.
+	; But I am quite certain that IIe does not.
+	lda	#0
+	sta	preg		; fix p reg so mon is happy
+	jmp	endformat
+.else
 ;;; file manager format (works!)
 	jsr	locfmpl		; load up Y and A
 	sty	fmptr
 	sta	fmptr+1
 
-	lda	#$0B		; init command
-	ldy	#0
+	lda	#FMPLCMD::init	; disk init(11) command
+	ldy	#FMPL::command
 	sta	(fmptr),y
 
-	lda	#$9D		; DOS location
-	ldy	#1
+	lda	#>DOSBOOT2HI	; DOS location
+	ldy	#FMPL::cmdprm
 	sta	(fmptr),y
 
-	lda	#254		; volume number
-	ldy	#4
+	lda	#volnum		; volume number
+	ldy	#FMPL::params+2	; init paramlist volume# ofs
 	sta	(fmptr),y
 
-	lda	#$01		; drive number
-	ldy	#5
+	lda	#d2drvno	; drive number
+	ldy	#FMPL::params+3	; init paramlist drive# ofs
 	sta	(fmptr),y
 
-	lda	#$06		; slot number
-	ldy	#6
+	lda	#d2slot		; slot number
+	ldy	#FMPL::params+4	; init paramlist slot# ofs
 	sta	(fmptr),y
 
 	lda	#$00		; scratch area LSB
-	ldy	#$0C
+	ldy	#FMPL::wrkaptr
 	sta	(fmptr),y
 
-	lda	#$92		; scratch area MSB
-	ldy	#$0D
+	lda	#>inflate_data	; scratch area MSB
+	ldy	#FMPL::wrkaptr+1
 	sta	(fmptr),y
 
 	jsr	dosfm		; doit!
 
-	ldy	#$0A		; return code
+	ldy	#FMPL::result	; return code
 	lda	(fmptr),y
 	beq	endformat
+.endif
 formaterror:
 	jmp	diskerror
 endformat:
 
 ;;;begin segment loop (5)
-	lda	#0		; 256 bytes/sector
-	ldy	#$0b		; offset in RWTS
-	sta	(pointer),y	; write it to RWTS
-
 	lda	#0		; buffer LSB
-	ldy	#8		; offset in RWTS
-	sta	(pointer),y	; write it to RWTS
+	ldy	#IOB::bufptr	; offset in IOB
+	sta	(iobptr),y	; write it to IOB
 
 	lda	#0
 	sta	trknum		; start with track 0
@@ -306,16 +359,8 @@ inf:
 	sta	trkcnt		; do 7 tracks/segment
 trkloop:
 	lda	trknum		; track number
-	ldy	#4		; offset in RWTS
-	sta	(pointer),y	; write it to RWTS
-
-;	lda	#0		; seek(0) command
-;	ldy	#$0C		; offset in RWTS
-;	sta	(pointer),y	; write it to RWTS
-
-;	jsr	locrpl		; locate rwts paramlist
-;	jsr	rwts		; do it!
-;	bcs	diskerror
+	ldy	#IOB::trknum	; offset in IOB
+	sta	(iobptr),y	; write it to IOB
 
 ;;;begin sector loop (16), backwards is faster, much faster
 	lda	#$F
@@ -324,20 +369,20 @@ secloop:
 	;jsr	draw_w		; write sector from buffer to disk
 	jsr	draw_s		; write sector from buffer to disk
 	lda	secnum		; sector number
-	ldy	#5		; offset in RWTS
-	sta	(pointer),y	; write it to RWTS
+	ldy	#IOB::secnum	; offset in IOB
+	sta	(iobptr),y	; write it to IOB
 
 	lda	buffer		; buffer MSB
 	clc
 	adc	secnum
-	ldy	#9		; offset in RWTS
-	sta	(pointer),y	; write it to RWTS
+	ldy	#IOB::bufptr+1	; offset in IOB
+	sta	(iobptr),y	; write it to IOB
 
-	lda	#2		; read(1)/write(2) command
-	ldy	#$0C		; offset in RWTS
-	sta	(pointer),y	; write it to RWTS
+	lda	#IOBCMD::write	; write(2) command
+	ldy	#IOB::command	; offset in IOB
+	sta	(iobptr),y	; write it to IOB
 
-	jsr	locrpl		; locate rwts paramlist
+	jsr	locrpl		; locate rwts IOB
 	jsr	rwts		; do it!
 	bcs	diskerror
 	lda	#0
@@ -345,14 +390,14 @@ secloop:
 
 	;jsr	draw_r		; read sector from disk to compare addr
 	;lda	#>cmpbuf	; compare MSB
-	;ldy	#9		; offset in RWTS
-	;sta	(pointer),y	; write it to RWTS
+	;ldy	#IOB::bufptr+1	; offset in IOB
+	;sta	(iobptr),y	; write it to IOB
 
-	;lda	#1		; read(1)/write(2) command
-	;ldy	#$0C		; offset in RWTS
-	;sta	(pointer),y	; write it to RWTS
+	;lda	#IOBCMD::read	; read(1) command
+	;ldy	#IOB::command	; offset in IOB
+	;sta	(iobptr),y	; write it to IOB
 
-	;jsr	locrpl		; locate rwts paramlist
+	;jsr	locrpl		; locate rwts IOB
 	;jsr	rwts		; do it!
 	;bcs	diskerror
 	;lda	#0
@@ -541,3 +586,5 @@ infdata:
 	;.byte	0,0,0,0		; LSB/MSB start, ETA in sec
 	;.byte	0,0,0,0		; LSB/MSB start, ETA in sec
 	;.byte	0		; format flag, 1 = no format
+
+.assert	* + (4*5 + 1) <= diskload3_org, warning, "diskload2 too large; overruns diskload3"

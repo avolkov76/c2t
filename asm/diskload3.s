@@ -489,6 +489,12 @@ inflateDynamicBlock_headerBits:
 inflateDynamicBlock_headerBase:
 	.byte	3,0,0  ; second byte is modified at runtime!
 
+	; ca65 v2.13 .align does not work properly here
+	;.align	256
+	.res	3, 0 ; round out block
+
+.assert	* = diskload3_org + $200, warning, "diskload3 size mismatch; must be $200 bytes"
+
 	.org inflate_data
 
 ; Data for building trees
@@ -516,7 +522,5 @@ codeToLiteralSymbol:
 	.org	*+256
 codeToControlSymbol:
 	.org	*+CONTROL_SYMBOLS
-
-	.byte	0,0,0 ; round out block
 
 END:
