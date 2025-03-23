@@ -1,5 +1,6 @@
 
 WIN32GCC = /usr/local/local.x86_64/gcc-4.8.0-qt-4.8.4-for-mingw32/win32-gcc/bin/i586-mingw32-gcc
+CCWARN = -Wall -Wno-strict-aliasing -Wno-unused-value -Wno-unused-function -Wno-misleading-indentation
 
 all: nix
 
@@ -20,30 +21,30 @@ clean: testclean
 
 # nix
 bin/c2t: c2t.c c2t.h
-	$(CC) -Wall -Wno-strict-aliasing -Wno-unused-value -Wno-unused-function -I. -O3 -o bin/c2t c2t.c -lm
+	$(CC) $(CCWARN) -I. -O3 -o bin/c2t c2t.c -lm
 
 bin/c2t-96h: c2t-96h.c c2t.h
-	$(CC) -Wall -Wno-strict-aliasing -Wno-unused-value -Wno-unused-function -I. -O3 -o bin/c2t-96h c2t-96h.c -lm
+	$(CC) $(CCWARN) -I. -O3 -o bin/c2t-96h c2t-96h.c -lm
 
 # macos universal
 bin/c2t_x86: c2t.c c2t.h
-	$(CC) -Wall -Wno-strict-aliasing -Wno-unused-value -Wno-unused-function -I. -O3 -target x86_64-apple-macos10.12 -o $@ c2t.c -lm
+	$(CC) $(CCWARN) -I. -O3 -target x86_64-apple-macos10.12 -o $@ c2t.c -lm
 
 bin/c2t-96h_x86: c2t-96h.c c2t.h
-	$(CC) -Wall -Wno-strict-aliasing -Wno-unused-value -Wno-unused-function -I. -O3 -target x86_64-apple-macos10.12 -o $@ c2t-96h.c -lm
+	$(CC) $(CCWARN) -I. -O3 -target x86_64-apple-macos10.12 -o $@ c2t-96h.c -lm
 
 bin/c2t_arm: c2t.c c2t.h
-	$(CC) -Wall -Wno-strict-aliasing -Wno-unused-value -Wno-unused-function -I. -O3 -target arm64-apple-macos11 -o $@ c2t.c -lm
+	$(CC) $(CCWARN) -I. -O3 -target arm64-apple-macos11 -o $@ c2t.c -lm
 
 bin/c2t-96h_arm: c2t-96h.c c2t.h
-	$(CC) -Wall -Wno-strict-aliasing -Wno-unused-value -Wno-unused-function -I. -O3 -target arm64-apple-macos11 -o $@ c2t-96h.c -lm
+	$(CC) $(CCWARN) -I. -O3 -target arm64-apple-macos11 -o $@ c2t-96h.c -lm
 
 # windows
 bin/c2t.exe: c2t.c c2t.h
-	$(WIN32GCC) -Wall -Wno-strict-aliasing -Wno-unused-value -Wno-unused-function -I. -O3 -o bin/c2t.exe c2t.c
+	$(WIN32GCC) $(CCWARN) -I. -O3 -o bin/c2t.exe c2t.c
 
 bin/c2t-96h.exe: c2t-96h.c c2t.h
-	$(WIN32GCC) -Wall -Wno-strict-aliasing -Wno-unused-value -Wno-unused-function -I. -O3 -o bin/c2t-96h.exe c2t-96h.c
+	$(WIN32GCC) $(CCWARN) -I. -O3 -o bin/c2t-96h.exe c2t-96h.c
 
 cc65-sources-2.13.3.tar.bz2:
 	curl -sLO https://github.com/mrdudz/cc65-old/raw/master/cc65-sources-2.13.3.tar.bz2
