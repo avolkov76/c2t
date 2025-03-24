@@ -45,6 +45,7 @@ monheader()
 (
 monheader mon/dos33.boot1.mon dosboot1 "DOS 3.3 page 3 vectors"
 monheader mon/dos33.boot2.mon dosboot2 "DOS 3.3 boot 2"
+monheader mon/dos33.rwts.mon dosrwts "DOS 3.3 RWTS rip"
 ) >> c2t.h.2
 
 cat c2t.h.[012] > c2t.h
