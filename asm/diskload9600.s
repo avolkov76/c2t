@@ -38,9 +38,9 @@ phase1:
 	ldy	#>loadm
 	jsr	print
 				; diskload2 ORG
-	lda	#<dos33vecs	; store begin location LSB
+	lda	#<diskload2_org	; store begin location LSB
 	sta	begload
-	lda	#>dos33vecs	; store begin location MSB
+	lda	#>diskload2_org	; store begin location MSB
 	sta	begload+1
 				; end of DOS + 1 for comparison
 	lda	#$00		; store end location LSB

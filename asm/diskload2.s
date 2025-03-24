@@ -8,7 +8,7 @@
 .include "diskload3.inc"
 
 ; XXX: I cannot make .ifdef or .ifconst work properly with .define. It must be a symbol.
-USE_RWTS_FORMAT = 1
+;USE_RWTS_FORMAT = 1
 
 cout	=	COUT		; character out sub
 crout	=	CROUT		; CR out sub
@@ -21,10 +21,8 @@ reboot	=	PWRUP		; reboot machine
 bell	=	BELL2		; ding
 rdkey	=	RDKEY		; read key
 
-locrpl	=	DOSRWTSIOB	; locate RWTS default IOB jsr
-rwts	=	DOSRWTSCALL	; RWTS jsr
-locfmpl	=	DOSFMPRMLIST	; locate DOS FileMan paramlist
-dosfm	=	DOSFMCALL	; DOS FileMan entry point thunk
+rwts	=	DOSRWTSEP	; RWTS direct entry point
+dosfm	=	DOSFMEP		; DOS FileMan direct entry point
 
 ; my vectors
 
@@ -52,7 +50,6 @@ preg	=	STATUS		; mon p reg
 
 invsp	=	$60		; inverse space for draw
 data	=	$1000		; 7 track dump from inflate
-boot1	=	DOSP3VECS	; target boot 1 location
 cmpbuf	=	$9200		; buffer for sector check
 count	=	$900
 
@@ -63,13 +60,6 @@ volnum	=	254		; volume number we will use (unlikely to ever change)
 
 	.org	diskload2_org
 
-	ldx	#0		; move 96d0 to 3d0
-move1:
-	lda	dos33vecs,x
-	sta	boot1,x
-	inx
-	cpx	#DOSP3VECSIZE
-	bne	move1
 patch:
 	lda	#$B3		; hack since chksum could not be written to C000
 	sta	$BFFF		; chksum was written do BFFF
@@ -110,7 +100,8 @@ initdos:
 	sta	RWTSDLY		; set delay counter LSB (uninited by RWTS)
 
 setupiob:
-	jsr	locrpl		; locate rwts default IOB
+	ldy	#<DOSDEFIOB	; Equivalent to DOSRWTSIOB call
+	lda	#>DOSDEFIOB
 	sty	iobptr		; and save pointer
 	sta	iobptr+1
 
@@ -162,9 +153,8 @@ format:				; format the diskette
 	ldy	#IOB::command	; offset in IOB
 	sta	(iobptr),y	; write it to IOB
 
-	;ldy	iobptr		; load IOB pointer
-	;lda	iobptr+1	; equivalent to DOSDEFIOB call
-	jsr	locrpl		; locate rwts IOB
+	ldy	iobptr		; load IOB pointer
+	lda	iobptr+1	; IOB MSB
 	jsr	rwts		; do it!
 	bcs	formaterror
 
@@ -177,7 +167,8 @@ format:				; format the diskette
 	ldy	#IOB::command	; offset in IOB
 	sta	(iobptr),y	; write it to IOB
 
-	jsr	locrpl		; locate rwts IOB
+	ldy	iobptr		; load IOB pointer
+	lda	iobptr+1	; IOB MSB
 	jsr	rwts		; invoke RWTS
 	bcs	formaterror
 
@@ -188,7 +179,8 @@ format:				; format the diskette
 	jmp	endformat
 .else
 ;;; file manager format (works!)
-	jsr	locfmpl		; load up Y and A
+	ldy	DOSFMPRMPTR	; Load A/Y ptr; equivalent to DOSFMPRMLIST call
+	lda	DOSFMPRMPTR+1	; Load A/Y ptr; equivalent to DOSFMPRMLIST call
 	sty	fmptr
 	sta	fmptr+1
 
@@ -382,7 +374,8 @@ secloop:
 	ldy	#IOB::command	; offset in IOB
 	sta	(iobptr),y	; write it to IOB
 
-	jsr	locrpl		; locate rwts IOB
+	ldy	iobptr		; load IOB pointer
+	lda	iobptr+1	; IOB MSB
 	jsr	rwts		; do it!
 	bcs	diskerror
 	lda	#0
@@ -397,7 +390,8 @@ secloop:
 	;ldy	#IOB::command	; offset in IOB
 	;sta	(iobptr),y	; write it to IOB
 
-	;jsr	locrpl		; locate rwts IOB
+	;ldy	iobptr		; load IOB pointer
+	;lda	iobptr+1	; IOB MSB
 	;jsr	rwts		; do it!
 	;bcs	diskerror
 	;lda	#0

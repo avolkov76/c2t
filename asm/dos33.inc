@@ -46,7 +46,11 @@ RWTSMAXRECAL	:= $06F8	; RWTS: max recalibration retries (steals slot 0 hole)
 DOSBOOT2HI	:= $9D00	; Boot 2 high load location
 
 ; DOS RWTS locations at highest load range
-DOSDEFIOB	:= $B7E8	; Default RWTS IOB; can be used by anyone; returned by DOSRWTSIOB
+DOSFMPRMPTR	:= $9D0E	; File Manager Paramlist pointer (see FMPL); returned by DOSFMPRMLIST
+DOSFMPRMBUF	:= $B5BB	; File Manager Paramlist actual (see FMPL); pointed to by DOSFMPRMPTR
+DOSFMEP		:= $AAFD	; File Manager entry point (has X=0 check)
+DOSIOBPTR	:= $AAC1	; RWTS default IOB pointer (see IOB); returned by DOSRWTSIOB
+DOSDEFIOB	:= $B7E8	; Default RWTS IOB (see IOB); can be used by anyone; pointed to by DOSIOBPTR
 DOSDEFDCT	:= $B7FB	; Default RWTS DCT; can be used by anyone; referenced by DOSDEFIOB
 DOSRWTSEP	:= $B7B5	; RWTS entry point; disables interrupts
 DOSRDSECDATA	:= $B8DC	; RWTS read sector data routine; waits up to $20 nybbles for sector data

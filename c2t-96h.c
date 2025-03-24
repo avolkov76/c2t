@@ -1138,17 +1138,6 @@ int main(int argc, char **argv)
 			}
 		}
 
-		for(j=0;j<sizeof(dosboot1)/sizeof(char);j++) {
-			byte=dosboot1[j];
-			for(i=0;i<8;i++) {
-				if(byte & 0x80)
-					ones++;
-				else
-					zeros++;
-				byte <<= 1;
-			}
-		}
-
 		for(j=0;j<sizeof(dosboot2)/sizeof(char);j++) {
 			byte=dosboot2[j];
 			for(i=0;i<8;i++) {
@@ -1227,11 +1216,8 @@ int main(int argc, char **argv)
 			appendtone(&buf,6000,0.25,0);
 		}
 
+		// reset checksum for stage 2
 		checksum = 0xff;
-		for(i=0;i<sizeof(dosboot1)/sizeof(char);i++) {
-			WRITEBYTE(dosboot1[i]);
-			checksum ^= dosboot1[i];
-		}
 
 		// time to compress and compute start location and length
 		// patch loadcode2 with start locations and ETA
