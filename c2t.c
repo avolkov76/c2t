@@ -666,7 +666,7 @@ int main(int argc, char **argv)
 			ram[0x2] = (segments[0].start) & 0xFF; 
 			ram[0x3] = (segments[0].start) >> 8;
 			//setup JSR
-			ram[0xBF00] = 0x20; // JSR $9B00
+			ram[0xBF00] = 0x20; // JSR $BA00
 			ram[0xBF01] = 0x00;
 			ram[0xBF02] = 0xBA;
 			ram[0xBF03] = 0x00; //BRK to stop simulation
