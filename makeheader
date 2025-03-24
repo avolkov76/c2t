@@ -26,30 +26,26 @@ header diskload3 diskloadcode3 8
 
 cd ..
 
-cat <<EOF >c2t.h.2
+monheader()
+{
+	FILE=$1
+	VAR=$2
+	COMMENT=$3
 
-//DOS 3.3
-unsigned char dosboot1[] = {
-EOF
+	echo ""
+	echo "// ${COMMENT}"
+	echo "unsigned char ${VAR}[] = {"
+	cat ${FILE} | \
+		sed 's/ /,0x/g' | \
+		sed 's/$/,/' | \
+		sed -E 's/^(..*:)./\t\/*\1*\/ /'
+	echo "};"
+}
 
-cat mon/dos33.boot1.mon | \
-	perl -p -e 's/ /,0x/g' | \
-	perl -p -e 's/$/,/' | \
-	perl -p -e 's/^....../\t/' >>c2t.h.2
-
-cat <<EOF >>c2t.h.2
-};
-
-//DOS 3.3
-unsigned char dosboot2[] = {
-EOF
-
-cat mon/dos33.boot2.mon | \
-	perl -p -e 's/ /,0x/g' | \
-	perl -p -e 's/$/,/' | \
-	perl -p -e 's/^....../\t/' >>c2t.h.2
-
-echo "};" >>c2t.h.2
+(
+monheader mon/dos33.boot1.mon dosboot1 "DOS 3.3 page 3 vectors"
+monheader mon/dos33.boot2.mon dosboot2 "DOS 3.3 boot 2"
+) >> c2t.h.2
 
 cat c2t.h.[012] > c2t.h
 
