@@ -115,31 +115,32 @@ sumcheck:
 
 	lda	#0
 	sta	pointer
-	lda	begload+1
-	sta	pointer+1
+	ldx	begload+1
+	stx	pointer+1
 	lda	#$ff		; init checksum
 	ldy	begload
 sumloop:
 	eor	(pointer),y
 
 	;last page?
-
-	ldx	pointer+1
 	cpx	endload+1
 	beq	last
 	iny
 	bne	sumloop
-	inc	pointer+1
+	inx
+	stx	pointer+1
+	; is it the last page now? (endload=$xx00 edge case)
+	cpx	endload+1
 	bne	sumloop
+	beq	last2
 last:
 	iny
+last2:
 	cpy	endload
 	bcc	sumloop
 
-	ldy	#0
-	eor	(endload),y
-;	sta	chksum
-;	lda	chksum
+	sta	chksum
+	lda	chksum
 	bne	error
 	jmp	ok		; return to caller
 error:

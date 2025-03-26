@@ -91,24 +91,27 @@ endcheck:			; check for match of expected length
 sumcheck:
 	lda	#0
 	sta	pointer
-	lda	ld_beg+1
-	sta	pointer+1
+	ldx	ld_beg+1
+	stx	pointer+1
 	lda	#$ff		; init checksum
 	ldy	ld_beg
 sumloop:
 	eor	(pointer),y
 
 	;last page?
-
-	ldx	pointer+1
 	cpx	ld_end+1
 	beq	last
 	iny
 	bne	sumloop
-	inc	pointer+1
+	inx
+	stx	pointer+1
+	; is it the last page now? (ld_end=$xx00 edge case)
+	cpx	ld_end+1
 	bne	sumloop
+	beq	last2
 last:
 	iny
+last2:
 	cpy	ld_end
 	bcc	sumloop
 

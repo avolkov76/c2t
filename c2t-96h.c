@@ -741,8 +741,8 @@ int main(int argc, char **argv)
 				ram[0xBE80 - (0x823 - 0x80C) + j++] = (0xBA00 - cmp_len) >> 8;
 				ram[0xBE80 - (0x823 - 0x80C) + j++] = endj & 0xFF;
 				ram[0xBE80 - (0x823 - 0x80C) + j++] = endj >> 8;
-				ram[0x00] = 0xFF;
-				ram[0xBF09] = 0x00; //BRK
+				ram[0x00] = 0xFF; // chksum initial value
+				ram[0xBF0D] = 0x00; // BRK @ LDA $00 [chksum]
 
 				reset6502();
 				exec6502(0xBEE3);
@@ -1263,10 +1263,8 @@ int main(int argc, char **argv)
 				ram[0x01] = (0x8FFF - cmp_len) >> 8;
 				ram[0x02] = 0x00;
 				ram[0x03] = 0x90;
-				ram[0x04] = 0xFF;
-				ram[0x9089] = 0x85; //STA
-				ram[0x908A] = 0x04; //zero page $04
-				ram[0x908B] = 0x00; //BRK
+				ram[0x04] = 0xFF; // chksum initial value
+				ram[0x908A] = 0x00; // BRK @ LDA $04 [chksum]
 
 				reset6502();
 				exec6502(0x9065);
