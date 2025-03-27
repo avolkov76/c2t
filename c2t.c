@@ -970,6 +970,17 @@ int main(int argc, char **argv)
 
 		WRITEBYTE(checksum);
 
+		if (fast) {
+			// XXX: output a "stop" half-bit for fastload9600. This is a hack to make the last checksum bit
+			//   terminate correctly. Unlike fastload8000 (which times the +phase), fastload9600 times
+			//   the -phase, and the end-frequency sine wave produces a rising edge with too low of a slope.
+			//   The low slope causes a timing error due to 741's hysteresis, and the bit is read as "1".
+			//   The "stop" half-bit drives the 741 beyond hysteresis threshold at the correct time.
+			int cur_phase = offset; // preserve current phase
+			appendtone(&output,&outputlength,freq0,rate,0,0.5,&offset);
+			offset = cur_phase; // preserve phase
+		}
+
 		if(fast || cd || k8)
 			//appendtone(&output,&outputlength,freq_end,rate,0,1,&offset);
 			appendtone(&output,&outputlength,freq_end,rate,0,10,&offset);
