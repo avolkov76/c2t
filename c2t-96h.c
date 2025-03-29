@@ -321,11 +321,15 @@ int main(int argc, char **argv)
 				inputtype = DSK;
 		}
 
-//TODO: Windows needs "rb", check UNIX/Linux
-
-		if ((ifp = fopen(segments[numseg].filename, "rb")) == NULL) {
-			fprintf(stderr,"Cannot read: %s\n\n",segments[numseg].filename);
-			return 1;
+		{
+			const char* mode = "r";
+			// Windows needs "b" for binary files; Linux/BSD will simply ignore "b" (see fopen(3))
+			if(inputtype != MONITOR)
+				mode = "rb";
+			if ((ifp = fopen(segments[numseg].filename, mode)) == NULL) {
+				fprintf(stderr,"Cannot read: %s\n\n",segments[numseg].filename);
+				return 1;
+			}
 		}
 
 		fprintf(stderr,"Reading %s, type %s, segment %d, start: ",segments[numseg].filename,filetypes[inputtype],numseg+1);
@@ -546,7 +550,11 @@ int main(int argc, char **argv)
 
 	ofp=stdout;
 	if(fileoutput) {
-		if ((ofp = fopen(OUTFILE, "w")) == NULL) {
+		const char* mode = "w";
+		// Windows needs "b" for binary files; Linux/BSD will simply ignore "b" (see fopen(3))
+		if(outputtype == AIFF || outputtype == WAVE)
+			mode = "wb";
+		if ((ofp = fopen(OUTFILE, mode)) == NULL) {
 			fprintf(stderr,"\nCannot write: %s\n\n",OUTFILE);
 			return 1;
 		}
