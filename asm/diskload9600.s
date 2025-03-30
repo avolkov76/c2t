@@ -12,13 +12,12 @@ tapein	=	TAPEIN		; read tape interface
 warm	=	MONZ		; back to monitor
 clear	=	CR		; clear screen
 endbas	=	$80C
-target	=	$1000
 
 ; zero page parameters
 
-begload	=	$00		; begin load location LSB/MSB
-endload	=	$02		; end load location LSB/MSB
-chksum	=	$04		; checksum location
+begload	=	diskload1_zp+0	; begin load location LSB/MSB
+endload	=	diskload1_zp+2	; end load location LSB/MSB
+chksum	=	diskload1_zp+4	; checksum location
 pointer	=	$0C		; LSB/MSB pointer
 
 start:
@@ -73,7 +72,7 @@ pre:	lda	#1		; Load sentinel bit
 	ldx	#0		; Clear data index
 	clc			; Clear carry (byte complete flag)
 data:	bcc	waitlo		; Skip if byte not complete
-store:	sta	target,x	; Store data byte
+store:	sta	store+1,x	; Store data byte
 
 	eor	chksum		; compute checksum
 	sta	chksum		; store checksum

@@ -2,6 +2,7 @@
 ; Diskload bootstrapper object config
 
 diskload1_org	= $9000			; origin, should be $9000 for now
+diskload1_zp	= $00			; object's ZP usage
 
 ;--END-OF-H   ; ends C header file
 

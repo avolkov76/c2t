@@ -30,9 +30,10 @@ readtape=	diskload1
 
 ; zero page parameters
 
-begload	=	$00		; begin load location LSB/MSB
-endload	=	$02		; end load location LSB/MSB
-chksum	=	$04		; checksum location
+begload	=	diskload1_zp+0	; begin load location LSB/MSB
+endload	=	diskload1_zp+2	; end load location LSB/MSB
+chksum	=	diskload1_zp+4	; checksum location
+; TODO: continue diskload1_zp+X allocations here?
 secnum	=	$05		; loop var
 trknum	=	$06		; loop var
 segcnt	=	$07		; loop var
@@ -49,7 +50,7 @@ preg	=	STATUS		; mon p reg
 ; other vars
 
 invsp	=	$60		; inverse space for draw
-data	=	$1000		; 7 track dump from inflate
+data	=	diskload2_data	; 7 track dump from inflate
 cmpbuf	=	$9200		; buffer for sector check
 count	=	$900
 
@@ -304,9 +305,9 @@ second:
 	lda	infdata+1,x	; store begin location MSB
 	sta	begload+1
 
-	lda	#$00		; store end location LSB
+	lda	#<diskload1_org	; store end location LSB
 	sta	endload
-	lda	#$90		; store end location MSB
+	lda	#>diskload1_org	; store end location MSB
 	sta	endload+1
 
 	jsr	readtape	; get the code
