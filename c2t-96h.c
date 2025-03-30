@@ -368,7 +368,7 @@ int main(int argc, char **argv)
 				int j, k, l;
 
 				//segments[numseg].start=i*(140 * 1024 / 5);
-				segments[numseg].start=0x1000;
+				segments[numseg].start = diskload2_data;
 
 /* old version			
 				while(fread(&b, 1, 1, ifp) == 1 && segments[numseg].length < (140 * 1024 / 5))
@@ -700,6 +700,7 @@ int main(int argc, char **argv)
 			unsigned long cmp_ones=0, cmp_zeros=0;
 			double inflate_time = 0;
 			unsigned int endj;
+			const unsigned int simaddr = 0xBF00;
 
 			cmp_data = tdefl_compress_mem_to_heap(segments[0].data, segments[0].length, &cmp_len, TDEFL_MAX_PROBES_MASK);
 
@@ -727,33 +728,35 @@ int main(int argc, char **argv)
 			}
 
 			//compute inflate time
+			const unsigned int dataorg = autoload3_org - cmp_len;
 
 			//load up inflate data
 			checksum = 0xff;
 			for(j=0;j<cmp_len;j++) {
-				ram[0xBA00 - cmp_len + j] = cmp_data[j];
+				ram[dataorg + j] = cmp_data[j];
 				checksum ^= cmp_data[j];
 			}
 			//load up inflate code
 			for(j=0;j<sizeof(inflatecode)/sizeof(char);j++) {
-				ram[0xBA00 + j] = inflatecode[j];
+				ram[autoload3_org + j] = inflatecode[j];
 				checksum ^= inflatecode[j];
 			}
-			ram[0xBA00 + j] = checksum;
-			endj = 0xBA00 + j + 1;
+			ram[autoload3_org + j] = checksum;
+			endj = autoload3_org + j + 1;
 
 			if(k8) {
-				for(j=(0x823 - 0x80C);j<sizeof(fastload8000)/sizeof(char);j++)
-					ram[0xBE80 - (0x823 - 0x80C) + j] = fastload8000[j];
-				ram[0xBE80 - (0x823 - 0x80C) + j++] = (0xBA00 - cmp_len) & 0xFF;
-				ram[0xBE80 - (0x823 - 0x80C) + j++] = (0xBA00 - cmp_len) >> 8;
-				ram[0xBE80 - (0x823 - 0x80C) + j++] = endj & 0xFF;
-				ram[0xBE80 - (0x823 - 0x80C) + j++] = endj >> 8;
+				const unsigned int flmofs = 0x823 /*moved:*/ - 0x80C /*move:*/;
+				for(j=flmofs;j<sizeof(fastload8000)/sizeof(char);j++)
+					ram[fastload_org - flmofs + j] = fastload8000[j];
+				ram[fastload_org - flmofs + j++] = dataorg & 0xFF;
+				ram[fastload_org - flmofs + j++] = dataorg >> 8;
+				ram[fastload_org - flmofs + j++] = endj & 0xFF;
+				ram[fastload_org - flmofs + j++] = endj >> 8;
 				ram[0x00] = 0xFF; // chksum initial value
-				ram[0xBF0D] = 0x00; // BRK @ LDA $00 [chksum]
+				ram[fastload_org + 0x008D] = 0x00; // BRK @ LDA $00 [chksum]
 
 				reset6502();
-				exec6502(0xBEE3);
+				exec6502(fastload_org + 0x0063); // addr of sumcheck: LDA #0
 
 				if(ram[0x00] != 0)
 					fprintf(stderr,"WARNING: simulated checksum failed: %02X\n",ram[0x00]);
@@ -762,28 +765,28 @@ int main(int argc, char **argv)
 			}
 
 			//zero page src
-			ram[0x0] = (0xBA00 - cmp_len) & 0xFF;
-			ram[0x1] = (0xBA00 - cmp_len) >> 8;
+			ram[autoload3_zp + 0] = dataorg & 0xFF;
+			ram[autoload3_zp + 1] = dataorg >> 8;
 			//zero page dst
-			ram[0x2] = (segments[0].start) & 0xFF; 
-			ram[0x3] = (segments[0].start) >> 8;
+			ram[autoload3_zp + 2] = (segments[0].start) & 0xFF; 
+			ram[autoload3_zp + 3] = (segments[0].start) >> 8;
 			//setup JSR
-			ram[0xBF00] = 0x20; // JSR $BA00
-			ram[0xBF01] = 0x00;
-			ram[0xBF02] = 0xBA;
-			ram[0xBF03] = 0x00; //BRK to stop simulation
+			ram[simaddr + 0] = 0x20; // JSR autoload3 inflate
+			ram[simaddr + 1] = autoload3_org & 0xFF;
+			ram[simaddr + 2] = autoload3_org >> 8;
+			ram[simaddr + 3] = 0x00; //BRK to stop simulation
 			//run it
 			reset6502();
-			exec6502(0xBF00);
+			exec6502(simaddr);
 			//compare (just to be safe)
 			for(j=0;j<segments[0].length;j++)
 				if(ram[segments[0].start + j] != segments[0].data[j]) {
-					fprintf(stderr,"WARNING: simulated inflate failed at %04X\n",j+0x1000);
+					fprintf(stderr,"WARNING: simulated inflate failed at %04X\n",segments[0].start+j);
 					break;
 				}
 			inflate_time += clockticks6502/1023000.0;
 
-			fprintf(stderr,"start: 0x%04X, length: %5d, deflated: %.02f%%, data time:%.02f, inflate time:%.02f\n",(unsigned int)(0xB9FF - cmp_len),(unsigned int)cmp_len,100.0*(1-cmp_len/(float)segments[0].length),cmp_ones/(float)freq1 + cmp_zeros/(float)freq0,inflate_time);
+			fprintf(stderr,"start: 0x%04X, length: %5d, deflated: %.02f%%, data time:%.02f, inflate time:%.02f\n",dataorg,(unsigned int)cmp_len,100.0*(1-cmp_len/(float)segments[0].length),cmp_ones/(float)freq1 + cmp_zeros/(float)freq0,inflate_time);
 
 			if((ones/(float)freq1 + zeros/(float)freq0) < inflate_time + (cmp_ones/(float)freq1 + cmp_zeros/(float)freq0)) {
 				fprintf(stderr,"WARNING: compression disabled: no significant gain (%.02f)\n",ones/(float)freq1 + zeros/(float)freq0);
@@ -868,7 +871,7 @@ int main(int argc, char **argv)
 
 		// write out move and load code
 		if(compress) {
-			unsigned int cmp_start = 0xBA00 - segments[0].length;
+			unsigned int cmp_start = autoload3_org - segments[0].length;
 
 			//load start
 			table[0] = cmp_start & 0xff;
@@ -1233,72 +1236,76 @@ int main(int argc, char **argv)
 			int k, err;
 			double orig_len;
 			unsigned char checksum=0xff;
+			const unsigned int dataend = diskload1_org;  // cmp data loaded just below diskload1 object
+			const unsigned int datachkaddr = dataend - 1; // loaded chksum location
 
 			inflate_times[i] = 0;
 			
 			cmp_data = tdefl_compress_mem_to_heap(segments[i].data, segments[i].length, &cmp_len, TDEFL_MAX_PROBES_MASK);
 
 			//compute inflate time
+			const unsigned int dataorg = datachkaddr - cmp_len;
 			//load up inflate code
 			for(j=0;j<sizeof(diskloadcode3)/sizeof(char);j++)
-				ram[0x9B00 + j] = diskloadcode3[j];
+				ram[diskload3_org + j] = diskloadcode3[j];
 			//load up inflate data
 			for(j=0;j<cmp_len;j++) {
-				ram[0x8FFF - cmp_len + j] = cmp_data[j];
+				ram[dataorg + j] = cmp_data[j];
 				checksum ^= cmp_data[j];
 			}
-			ram[0x8FFF] = checksum;
+			ram[dataorg + j] = checksum;
 
 			//compute chksum time
 			if(k8) {
-				for(j=(0x859 - 0x80C);j<diskloadcode_len;j++)
-					ram[0x9000 - (0x859 - 0x80C) + j] = diskloadcode[j];
-				ram[0x00] = (0x8FFF - cmp_len) & 0xFF;
-				ram[0x01] = (0x8FFF - cmp_len) >> 8;
-				ram[0x02] = 0x00;
-				ram[0x03] = 0x90;
-				ram[0x04] = 0xFF; // chksum initial value
-				ram[0x908A] = 0x00; // BRK @ LDA $04 [chksum]
+				const unsigned int dlmofs = 0x859 /*moved:*/ - 0x80C /*move:*/;
+				for(j=dlmofs;j<diskloadcode_len;j++)
+					ram[diskload1_org - dlmofs + j] = diskloadcode[j];
+				ram[diskload1_zp + 0] = dataorg & 0xFF;
+				ram[diskload1_zp + 1] = dataorg >> 8;
+				ram[diskload1_zp + 2] = dataend & 0xFF;
+				ram[diskload1_zp + 3] = dataend >> 8;
+				ram[diskload1_zp + 4] = 0xFF; // chksum initial value
+				ram[diskload1_org + 0x008A] = 0x00; // BRK @ LDA $04 [chksum]
 
 				reset6502();
-				exec6502(0x9065);
+				exec6502(diskload1_org + 0x0065); // addr of LDA #0 below sumcheck:
 
-				if(ram[0x04] != 0)
+				if(ram[diskload1_zp + 4] != 0)
 					fprintf(stderr,"WARNING: simulated checksum failed: %02X\n",ram[0x04]);
 
 				inflate_times[i] += clockticks6502/1023000.0;
 			}
 
 			//zero page src
-			ram[0x10] = (0x8FFF - cmp_len) & 0xFF;
-			ram[0x11] = (0x8FFF - cmp_len) >> 8;
+			ram[diskload3_zp + 0] = dataorg & 0xFF;
+			ram[diskload3_zp + 1] = dataorg >> 8;
 			//zero page dst
-			ram[0x12] = 0x00;
-			ram[0x13] = 0x10;
-			//setup JSR
-			ram[0x9000] = 0x20; // JSR $9B00
-			ram[0x9001] = 0x00;
-			ram[0x9002] = 0x9B;
-			ram[0x9003] = 0x00; //BRK to stop simulation
+			ram[diskload3_zp + 2] = diskload2_data & 0xFF;
+			ram[diskload3_zp + 3] = diskload2_data >> 8;
+			//setup JSR (overwrites diskload1 object which is no longer needed)
+			ram[diskload1_org + 0] = 0x20; // JSR diskload3 inflate
+			ram[diskload1_org + 1] = diskload3_org & 0xFF;
+			ram[diskload1_org + 2] = diskload3_org >> 8;
+			ram[diskload1_org + 3] = 0x00; //BRK to stop simulation
 			//run it
 			reset6502();
-			exec6502(0x9000);
+			exec6502(diskload1_org);
 			//compare (just to be safe)
 			err=0;
 			for(j=0;j<7 * 4096;j++)
-				if(ram[0x1000 + j] != segments[i].data[j]) {
+				if(ram[diskload2_data + j] != segments[i].data[j]) {
 					err = 1;
 					break;
 				}
 			if(err)
-				fprintf(stderr,"WARNING: simulated inflate failed at %04X\n",j+0x1000);
+				fprintf(stderr,"WARNING: simulated inflate failed at %04X\n",diskload2_data+j);
 			inflate_times[i] += clockticks6502/1023000.0;
 
 			free(segments[i].data);
 			segments[i].data = cmp_data;
 			orig_len = segments[i].length;
 			segments[i].length = cmp_len;
-			segments[i].start = 0x8FFF - segments[i].length;
+			segments[i].start = dataorg;
 
 			// compress ?
 			// need to see what is faster, defaulting to compress for now
