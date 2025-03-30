@@ -7,9 +7,6 @@
 .include "diskload2.inc"
 .include "diskload3.inc"
 
-; XXX: I cannot make .ifdef or .ifconst work properly with .define. It must be a symbol.
-;USE_RWTS_FORMAT = 1
-
 cout	=	COUT		; character out sub
 crout	=	CROUT		; CR out sub
 prbyte	=	PRBYTE 		; print byte in hex
@@ -22,7 +19,6 @@ bell	=	BELL2		; ding
 rdkey	=	RDKEY		; read key
 
 rwts	=	DOSRWTSEP	; RWTS direct entry point
-dosfm	=	DOSFMEP		; DOS FileMan direct entry point
 
 ; my vectors
 
@@ -61,9 +57,6 @@ volnum	=	254		; volume number we will use (unlikely to ever change)
 
 	.org	diskload2_org
 
-patch:
-	lda	#$B3		; hack since chksum could not be written to C000
-	sta	$BFFF		; chksum was written do BFFF
 start:
 	jsr	clear		; clear screen
 	lda	#<title		; print title
@@ -148,7 +141,6 @@ format:				; format the diskette
 	ldy	#>formatm
 	jsr	print
 
-.ifdef USE_RWTS_FORMAT
 ;;; RWTS format (works here)
 	lda	#IOBCMD::format	; format(4) command
 	ldy	#IOB::command	; offset in IOB
@@ -178,47 +170,6 @@ format:				; format the diskette
 	lda	#0
 	sta	preg		; fix p reg so mon is happy
 	jmp	endformat
-.else
-;;; file manager format (works!)
-	ldy	DOSFMPRMPTR	; Load A/Y ptr; equivalent to DOSFMPRMLIST call
-	lda	DOSFMPRMPTR+1	; Load A/Y ptr; equivalent to DOSFMPRMLIST call
-	sty	fmptr
-	sta	fmptr+1
-
-	lda	#FMPLCMD::init	; disk init(11) command
-	ldy	#FMPL::command
-	sta	(fmptr),y
-
-	lda	#>DOSBOOT2HI	; DOS location
-	ldy	#FMPL::cmdprm
-	sta	(fmptr),y
-
-	lda	#volnum		; volume number
-	ldy	#FMPL::params+2	; init paramlist volume# ofs
-	sta	(fmptr),y
-
-	lda	#d2drvno	; drive number
-	ldy	#FMPL::params+3	; init paramlist drive# ofs
-	sta	(fmptr),y
-
-	lda	#d2slot		; slot number
-	ldy	#FMPL::params+4	; init paramlist slot# ofs
-	sta	(fmptr),y
-
-	lda	#$00		; scratch area LSB
-	ldy	#FMPL::wrkaptr
-	sta	(fmptr),y
-
-	lda	#>inflate_data	; scratch area MSB
-	ldy	#FMPL::wrkaptr+1
-	sta	(fmptr),y
-
-	jsr	dosfm		; doit!
-
-	ldy	#FMPL::result	; return code
-	lda	(fmptr),y
-	beq	endformat
-.endif
 formaterror:
 	jmp	diskerror
 endformat:

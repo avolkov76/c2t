@@ -43,8 +43,8 @@ monheader()
 }
 
 (
-monheader mon/dos33.boot1.mon dosboot1 "DOS 3.3 page 3 vectors"
-monheader mon/dos33.boot2.mon dosboot2 "DOS 3.3 boot 2"
+#monheader mon/dos33.boot1.mon dosboot1 "DOS 3.3 page 3 vectors"
+#monheader mon/dos33.boot2.mon dosboot2 "DOS 3.3 boot 2"
 monheader mon/dos33.rwts.mon dosrwts "DOS 3.3 RWTS rip"
 ) >> c2t.h.2
 
@@ -67,6 +67,7 @@ incheader asm/fastload.inc
 incheader asm/diskload1.inc
 incheader asm/diskload2.inc
 incheader asm/diskload3.inc
+incheader asm/dosrwts.inc
 ) >> c2t.h.3
 
 cat c2t.h.[0123] > c2t.h

@@ -4,6 +4,7 @@
 .include "diskload1.inc"
 .include "diskload2.inc"
 .include "diskload3.inc"
+.include "dosrwts.inc"
 
 cout	=	COUT		; character out sub
 crout	=	CROUT		; CR out sub
@@ -42,9 +43,9 @@ phase1:
 	lda	#>diskload2_org	; store begin location MSB
 	sta	begload+1
 				; end of DOS + 1 for comparison
-	lda	#$00		; store end location LSB
+	lda	#<dosrwts_end+1	; store end location LSB
 	sta	endload
-	lda	#$C0		; store end location MSB
+	lda	#>dosrwts_end	; store end location MSB
 	sta	endload+1
 
 	jsr	readtape	; get the code
@@ -124,7 +125,7 @@ sumcheck:
 	ldy	begload
 sumloop:
 	eor	(pointer),y
-
+	
 	;last page?
 	cpx	endload+1
 	beq	last

@@ -1155,8 +1155,8 @@ int main(int argc, char **argv)
 			}
 		}
 
-		for(j=0;j<sizeof(dosboot2)/sizeof(char);j++) {
-			byte=dosboot2[j];
+		for(j=0;j<sizeof(dosrwts)/sizeof(char);j++) {
+			byte=dosrwts[j];
 			for(i=0;i<8;i++) {
 				if(byte & 0x80)
 					ones++;
@@ -1379,9 +1379,9 @@ int main(int argc, char **argv)
 			checksum ^= diskloadcode3[i];
 		}
 
-		for(i=0;i<sizeof(dosboot2)/sizeof(char);i++) {
-			WRITEBYTE(dosboot2[i]);
-			checksum ^= dosboot2[i];
+		for(i=0;i<sizeof(dosrwts)/sizeof(char);i++) {
+			WRITEBYTE(dosrwts[i]);
+			checksum ^= dosrwts[i];
 		}
 
 		WRITEBYTE(checksum);
@@ -1401,7 +1401,7 @@ int main(int argc, char **argv)
 			if(i==0) {
 				if(!noformat) {
 					registerevent(events,buf.length,"Format Disk Delay (2000 Hz)");
-					j=28;
+					j=27; // XXX: -1 sec for not writing catalog or DOS image
 				}
 				else
 					j=0;
@@ -1421,7 +1421,8 @@ int main(int argc, char **argv)
 
 				registerevent(events,buf.length,"Inflate + Write Delay (2000 Hz)");
 			}
-			if(i==1) // seek time for track 0, just in case
+			// XXX: diskload2 seeks to 0 after formatting
+			if(noformat && i==1) // seek time for track 0, just in case
 				j+=2;
 
 /* count down code

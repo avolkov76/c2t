@@ -1,7 +1,7 @@
 ; diskload2.inc
 ; Diskload object config
 
-diskload2_org	= $9700			; origin, should be $9700 for now
+diskload2_org	= $B100			; origin; 4 pages
 diskload2_data	= $1000			; sector data start
 
 ;--END-OF-H   ; ends C header file
