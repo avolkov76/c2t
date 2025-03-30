@@ -63,6 +63,7 @@ incheader()
 (
 incheader asm/autoload.inc
 incheader asm/inflate.inc
+incheader asm/fastload.inc
 incheader asm/diskload1.inc
 incheader asm/diskload2.inc
 incheader asm/diskload3.inc
