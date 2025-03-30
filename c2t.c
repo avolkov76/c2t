@@ -1114,8 +1114,10 @@ int main(int argc, char **argv)
 		}
 
 		// patch in ETA
+		// diskload9600 code shifted due to additional code page moved
+		const int etaddr = k8 ? 0x84F : 0x0855;
 		for(i=0;i<strlen(eta);i++)
-			diskloadcode[0x84F - 0x80C + i] = eta[i] + 0x80;
+			diskloadcode[etaddr - 0x80C + i] = eta[i] + 0x80;
 
 		// write out move and load code
 		//for(i=0;i<sizeof(diskloadcode)/sizeof(char);i++) {
@@ -1287,6 +1289,15 @@ int main(int argc, char **argv)
 			appendtone(&output,&outputlength,2000,rate,0.3,0,&offset);
 		}
 		else {
+			// XXX: output a "stop" half-bit for diskload9600. This is a hack to make the last checksum bit
+			//   terminate correctly. Unlike diskload8000 (which times the +phase), diskload9600 times
+			//   the -phase, and the end-frequency sine wave produces a rising edge with too low of a slope.
+			//   The low slope causes a timing error due to 741's hysteresis, and the bit is read as "1".
+			//   The "stop" half-bit drives the 741 beyond hysteresis threshold at the correct time.
+			int cur_phase = offset; // preserve current phase
+			appendtone(&output,&outputlength,freq0,rate,0,0.5,&offset);
+			offset = cur_phase; // preserve phase
+	
 			appendtone(&output,&outputlength,2000,rate,0,1,&offset);
 			appendtone(&output,&outputlength,6000,rate,0.1,0,&offset);
 		}
@@ -1346,9 +1357,19 @@ int main(int argc, char **argv)
 			if(k8)
 				//appendtone(&output,&outputlength,770,rate,0,2,&offset);
 				appendtone(&output,&outputlength,770,rate,0,10,&offset);
-			else
+			else {
+				// XXX: output a "stop" half-bit for diskload9600. This is a hack to make the last checksum bit
+				//   terminate correctly. Unlike diskload8000 (which times the +phase), diskload9600 times
+				//   the -phase, and the end-frequency sine wave produces a rising edge with too low of a slope.
+				//   The low slope causes a timing error due to 741's hysteresis, and the bit is read as "1".
+				//   The "stop" half-bit drives the 741 beyond hysteresis threshold at the correct time.
+				int cur_phase = offset; // preserve current phase
+				appendtone(&output,&outputlength,freq0,rate,0,0.5,&offset);
+				offset = cur_phase; // preserve phase
+
 				//appendtone(&output,&outputlength,2000,rate,0,1,&offset);
 				appendtone(&output,&outputlength,2000,rate,0,10,&offset);
+			}
 		}
 
 		fprintf(stderr,"To load up and run on your Apple %s, type:\n\n\tLOAD\n\n",modeltypes[model]);

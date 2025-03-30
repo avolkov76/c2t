@@ -24,8 +24,8 @@ move:				; end of BASIC, move code to readtape addr
 move1:
 	lda	moved,x
         sta	readtape,x
-;	lda	moved+256,x
-;	sta	readtape+256,x
+	lda	moved+256,x
+	sta	readtape+256,x
 	inx
 	bne	move1
 phase1:
@@ -75,13 +75,19 @@ store:	sta	target,x	; Store data byte
 	sta	chksum		; store checksum
 
 	lda	#1		; Re-load sentinel bit
-waitlo:	bit	tapein		; Wait for input to go low
-	bpl	waitlo
-	bcc	poll9		; Poll at +9 cycles if no store	
-	inx			; Stored, so increment data index
-	bne	poll13		; Poll at +13 cycles if no carry
-	inc	store+2		; Increment data page
-	bne	poll21		; (always) poll at +21 cycles
+waitlo:	bit	tapein		; 4 - Wait for input to go low
+	bpl	waitlo		; 2 (fall through); 3 (for branch)
+	nop			; 2 - waste time (see point break below)
+	dec	waste		; 6 - waste time (see point break below)
+	nop			; 2 - waste time (see point break below)
+	bcc	poll13		; 3 (branch) - Poll at +13 cycles if no store; 2 (fall through) if store
+	inx			; 2 - Stored, so increment data index
+	nop			; 2 - waste time for 6-cycle alignment
+	bne	poll19		; 3 (branch) - Poll at +19 cycles if no carry; 2 (fall through) if next page
+	nop			; 2 - waste time for 6-cycle alignment
+	nop			; 2 - waste time for 6-cycle alignment
+	inc	store+2		; 6 - Increment data page
+	bne	poll31		; 3 - (branch always) poll at +31 cycles
 
 one:	sec			; one bit detected
 	rol			;  shift it into A
@@ -91,40 +97,52 @@ zero:	clc			; zero bit detected
 	rol			;  shift it into A
 	jmp	data		;   and go handle data (C = sentinel)
 
-poll9:	bit	tapein
-	bpl	zero		; zero bit (short)(9-15 cycles)
-poll13:	bit	tapein		; (2 cycles early if branched here)
-	bpl	zero		; zero bit (15-21 cycles)
-poll21:	bit	tapein
-	bpl	zero		; zero bit (21-27 cycles)
+poll13:	dec	waste		; 6 - waste time; ** no man's land ** (13-18 cycles)
+poll19:	dec	waste		; 6 - waste time; ** no man's land ** (19-24 cycles)
+poll25:	dec	waste		; 6 - waste time; ** no man's land ** (25-30 cycles)
+poll31:	dec	waste		; 6 - waste time; ** no man's land ** (31-36 cycles)
 	bit	tapein
-	bpl	zero		; zero bit (27-33 cycles)
+	bpl	rng0err		; ** no man's land ** (0-42 cycles)
+	dec	waste		; 6 - waste time; zero bit (43-48 cycles); ok to wait
 	bit	tapein
-	bpl	zero		; zero bit (33-39 cycles)
+	bpl	zero		; zero bit (49-54 cycles)
 	bit	tapein
-	bpl	zero		; zero bit (39-45 cycles)
+	bpl	zero		; zero bit (55-60 cycles)
 	bit	tapein
-	bpl	zero		; zero bit (45-51 cycles)
+	bpl	zero		; zero bit (61-66 cycles)
+	; NB: This is the 0/1 point break: 67 cycles with a +/-4 margin. The margin is slim!
+	;   The point is centered by NOPs after waitlo loop.
+	;   Add/remove the NOPs above (+/-2) to experiment.
+	; XXX: currently, the offset is +10 cycles
+	dec	waste		; 6 - waste time; one bit (67-72 cycles); ok to wait
 	bit	tapein
-	bpl	zero		; zero bit (51-57 cycles)
+	bpl	one		; one bit (73-78 cycles)
 	bit	tapein
-	bpl	zero		; one bit (57-63 cycles)
+	bpl	one		; one bit (79-84 cycles)
 	bit	tapein
-	bpl	one		; one bit (63-69 cycles)
+	bpl	one		; ** no man's land ** (85-90 cycles), closer to bit 1
+	dec	waste		; 6 - waste time; (91-96); ok to wait
 	bit	tapein
-	bpl	one		; one bit (69-75 cycles)
+	bpl	pre		; pre pulse (91-102)
 	bit	tapein
-	bpl	one		; one bit (75-81 cycles)
+	bpl	pre		; pre pulse (103-108 cycles)
 	bit	tapein
-	bpl	one		; one pulse (81-87 cycles)
-	bit	tapein
-	bpl	pre		; pre pulse (87-93 cycles)
-	bit	tapein
-	bpl	pre		; pre pulse (93-99 cycles)
-	bit	tapein
-	bpl	pre		; pre pulse (99-105 cycles)
+	bpl	rngperr		; ** no man's land ** (109-130 cycles)
+	bmi	endcode		; (branch always) low freq signals end of data
 
-				; low freq signals end of data
+rngperr:
+	lda	#'P'
+	bne	rngkind
+rng0err:
+	lda	#'0'
+rngkind:	
+	sta	rngm+2
+rangerr:
+	jsr	crout
+	lda	#<rngm
+	ldy	#>rngm
+	jmp	prterr
+
 endcode:  
 	txa			; write end of file location + 1
 	clc
@@ -148,6 +166,8 @@ sumcheck:
 	lda	chksum
 	bne	error
 	jmp	ok		; return to caller
+prterr:
+	jsr	print
 error:
 	lda	#<errm
 	ldy	#>errm
@@ -169,6 +189,8 @@ print1:	ora	#$80
 	rts
 
 chkm:	.asciiz	"CHKSUM "
+rngm:	.asciiz	"RG  "
 okm:	.asciiz	"OK"
 errm:	.asciiz	"ERROR"
+waste:	.byte	0
 end:
