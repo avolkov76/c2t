@@ -659,8 +659,14 @@ int main(int argc, char **argv)
 				ram[fastload_org - flmofs + j++] = endj & 0xFF;
 				ram[fastload_org - flmofs + j++] = endj >> 8;
 				ram[0x00] = 0xFF; // chksum initial value
+
+				if(ram[fastload_org + 0x008D] != 0xA5 /*LDA zp*/)
+					fprintf(stderr,"WARNING: unexpected opcode ($%02X) at 0x%04X. Verify fastload8000 object\n",ram[fastload_org+0x008D],fastload_org+0x008D);
 				ram[fastload_org + 0x008D] = 0x00; // BRK @ LDA $00 [chksum]
 
+				if(ram[fastload_org + 0x0063] != 0xA9 /*LDA #imm*/)
+					fprintf(stderr,"WARNING: unexpected opcode ($%02X) at 0x%04X. Verify fastload8000 object\n",ram[fastload_org+0x0063],fastload_org+0x0063);
+				
 				reset6502();
 				exec6502(fastload_org + 0x0063); // addr of sumcheck: LDA #0
 
@@ -1161,7 +1167,13 @@ int main(int argc, char **argv)
 				ram[diskload1_zp + 2] = dataend & 0xFF;
 				ram[diskload1_zp + 3] = dataend >> 8;
 				ram[diskload1_zp + 4] = 0xFF; // chksum initial value
+
+				if(ram[diskload1_org + 0x008A] != 0xA5 /*LDA zp*/)
+					fprintf(stderr,"WARNING: unexpected opcode ($%02X) at 0x%04X. Verify diskload8000 object\n",ram[diskload1_org+0x008A],diskload1_org+0x008A);
 				ram[diskload1_org + 0x008A] = 0x00; // BRK @ LDA $04 [chksum]
+
+				if(ram[diskload1_org + 0x0065] != 0xA9 /*LDA #imm*/)
+					fprintf(stderr,"WARNING: unexpected opcode ($%02X) at 0x%04X. Verify diskload8000 object\n",ram[diskload1_org+0x0065],diskload1_org+0x0065);
 
 				reset6502();
 				exec6502(diskload1_org + 0x0065); // addr of LDA #0 below sumcheck:
