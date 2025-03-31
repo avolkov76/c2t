@@ -1,0 +1,23 @@
+asm/**
+!asm/*.s
+
+# Generated at build time
+c2t.h
+
+# The contents of bin, apart from Windows, are just build
+# artifacts and could have been put there for any platform.
+# Let's not check those in.
+bin/**
+
+# Apparently these are distribution binaries for Windows
+# so if they're around we commit them.
+# TODO: use releases instead of this
+# TODO: make it so that "make clean" on non-Windows doesn't
+#       clobber the Windows binary and cause git to delete.
+!bin/*.exe
+
+# Annoying macOS Finder state detritus
+.DS_Store
+
+# Installed at build time, not a distributed artifact
+cc65*
