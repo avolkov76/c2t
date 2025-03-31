@@ -53,11 +53,11 @@ incheader()
 	FILE=$1
 
 	echo ""
-	cat ${FILE} | \
-		sed -n '/;\s*--END-OF-H/q; p;' | \
-		sed 's/;/\/\//' | \
-		sed -E 's/^\s*(\w+)\s*=\s*(..*)/#define \1 \2/' | \
-		sed 's/\s\$/ 0x/'
+	cat ${FILE} \
+		| sed -n '/;\s*--END-OF-H/q; p;' \
+		| sed 's/;/\/\//' \
+		| sed -E 's|[[:space:]]*([[:alnum:]_]+)[[:space:]]*=[[:space:]]*(.*)|#define \1 \2|' \
+		| sed 's/[[:space:]]\$/ 0x/'
 }
 
 (
