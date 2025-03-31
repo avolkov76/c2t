@@ -1,5 +1,7 @@
 asm/**
 !asm/*.s
+!asm/*.inc
+!asm/Makefile
 
 # Generated at build time
 c2t.h
