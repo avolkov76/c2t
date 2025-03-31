@@ -54,10 +54,10 @@ incheader()
 
 	echo ""
 	cat ${FILE} | \
-		sed -n '/;\s*--END-OF-H/q; p;' |    # cut the .inc file at ;--END-OF-H line
-		sed 's/;/\/\//' |    # asm comments (;) to C (//)
-		sed -E 's/^\s*(\w+)\s*=\s*(..*)/#define \1 \2/' |    # asm sym=val to C #define
-		sed 's/\s\$/ 0x/'    # asm $HEX to C 0xHEX
+		sed -n '/;\s*--END-OF-H/q; p;' | \
+		sed 's/;/\/\//' | \
+		sed -E 's/^\s*(\w+)\s*=\s*(..*)/#define \1 \2/' | \
+		sed 's/\s\$/ 0x/'
 }
 
 (
