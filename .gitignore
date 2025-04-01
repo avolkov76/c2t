@@ -1,0 +1,12 @@
+asm/**
+!asm/*.s
+!asm/*.inc
+
+# Generated at build time but being kept upstream
+# c2t.h
+
+# Annoying macOS Finder state detritus
+.DS_Store
+
+# Installed at build time, not a distributed artifact
+cc65*
