@@ -54,9 +54,9 @@ incheader()
 
 	echo ""
 	cat ${FILE} \
-		| sed -n '/;\s*--END-OF-H/q; p;' \
+		| sed -n '/;[[:space:]]*--END-OF-H/q; p;' \
 		| sed 's/;/\/\//' \
-		| sed -E 's|[[:space:]]*([[:alnum:]_]+)[[:space:]]*=[[:space:]]*(.*)|#define \1 \2|' \
+		| sed -E 's|[[:space:]]*([[:alnum:]_]+)[[:space:]]*=[[:space:]]*(.+)|#define \1 \2|' \
 		| sed 's/[[:space:]]\$/ 0x/'
 }
 
