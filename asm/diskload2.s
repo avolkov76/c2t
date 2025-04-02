@@ -36,6 +36,7 @@ segcnt	=	$07		; loop var
 buffer	=	$08		; MSB of RWTS buffer
 trkcnt	=	$09		; track counter (0-6)
 iobptr	=	$0A		; RWTS IOB pointer LSB/MSB
+romptr	=	$0A		; (overload) CX00 slot ROM ptr for Disk II detection
 prtptr	=	$0C		; pointer LSB/MSB
 fmptr	=	$0E		; file manager pointer
 ;inf_zp	=	$10		; inflate vars (10); see diskload3.inc
@@ -50,8 +51,9 @@ data	=	diskload2_data	; 7 track dump from inflate
 cmpbuf	=	$9200		; buffer for sector check
 count	=	$900
 
-d2slot	=	6		; for now, presume slot 6
-d2slotio=	d2slot * $10	; for now, presume slot 6 I/O offset
+defd2sl	=	6		; default Disk II slot (not detected)
+d2begsl	=	6		; starting slot for Disk II detection
+				; XXX: IIe starts at 7; safer to start at 6
 d2drvno	=	1		; for now, presume drive 1
 volnum	=	254		; volume number we will use (unlikely to ever change)
 
@@ -81,10 +83,75 @@ start:
 	ldy	#>left
 	jsr	print
 
+detectdisk:			; detect Disk II controller
+	lda	#0		; using IIe firmware protocol
+	sta	romptr		; init the slot ROM pointer
+	lda	#d2begsl+1	; starting slot#; +1 for DEC
+	ora	#>IOBASE	; to slot ROM page
+	sta	romptr+1	; save the ROM ptr page
+dslotloop:
+	dec	romptr+1	; go down the slots
+	lda	romptr+1
+	cmp	#>IOBASE	; reached the end?
+	beq	notdetected	; reached $C000; controller not found
+	ldy	#8-1		; 8-byte ROM sig, last byte
+dsigloop:
+	lda	(romptr),y	; read slot ROM byte
+	cmp	d2romsig,y	; compare to ROM signature
+	bne	dslotloop	; mismatch, try next slot
+	dey
+	dey			; compare every other byte
+	bpl	dsigloop	; until y<0
+detected:
+	lda	romptr+1	; detected where?
+	and	#$0F		; get slot#
+	sta	d2detect	; detection flag
+	bne	saveslot	; always; and "slot 0" guard for free
+notdetected:
+	lda	#defd2sl	; use default slot#
+saveslot:
+	sta	d2slot		; save slot#
+	asl			; A*=$10
+	asl			; convert to slot I/O ofs
+	asl
+	asl
+	sta	d2slotio	; save slot I/O ofs
+
+printdisk:			; display disk target
+	lda	#12		; col 12 (0-based)
+	sta	ch
+	lda	#20		; row 20 (0-based)
+	jsr	movecur
+	lda	#<diskm		; print "DISK:"
+	ldy	#>diskm
+	jsr	print
+
+	lda	d2slot		; inject slot# into "Sx,Dy" msg
+	clc
+	adc	#'0'		; to ascii digit
+	sta	diskm2+1	; inject digit
+	lda	#d2drvno	; inject drive# into "Sx,Dy" msg
+	adc	#'0'		; to ascii digit
+	sta	diskm2+4	; inject digit
+	lda	#<diskm2	; print "Sx,Dy"
+	ldy	#>diskm2
+	jsr	inv
+
+	lda	d2detect	; Disk II detection flag
+	beq	prdsknot	; was not detected
+	lda	#<diskdetm	; print "DETECTED"
+	ldy	#>diskdetm
+	bne	prdskdet	; always (y=page)
+prdsknot:
+	lda	#<disknotm	; print "NOT DETECTED"
+	ldy	#>disknotm
+prdskdet:
+	jsr	print
+
 initdos:
 	; Init some non-obvious DOS locations so we start in guaranteed known state,
 	; since none of boot 1 or boot 2 executed, and data could be anything.
-	ldy	#d2slot
+	ldy	d2slot
 	lda	#40*2		; head position just beyond max (track 80)
 	sta	RWTSD1CURTRK,y	; init drive 1 head pos for slot
 	sta	RWTSD2CURTRK,y	; init drive 2 head pos for slot
@@ -103,7 +170,7 @@ setupiob:
 	ldy	#IOB::ver	; offset in IOB
 	sta	(iobptr),y	; write it to IOB
 
-	lda	#d2slotio	; disk II slot I/O offset (slot# * $10)
+	lda	d2slotio	; disk II slot I/O offset (slot# * $10)
 	ldy	#IOB::slotio	; slot to access in IOB
 	sta	(iobptr),y	; write it to IOB
 	; Must init; presume no drive was actually accessed in last 2 seconds.
@@ -207,7 +274,7 @@ segloop:
 ;	sta	$9091
 ;;;; end hack
 ;	lda	#18
-;	sta	$24		; horiz
+;	sta	ch		; horiz
 ;	lda	#22		; vert
 ;	jsr	movecur		; move cursor to $24,a; 0 base
 ;	jsr	cleos
@@ -264,7 +331,7 @@ second:
 	jsr	readtape	; get the code
 inf:
 				; turn motor on to save 1-2 sec
-	ldx	#$60		; slot #6
+	ldx	d2slotio	; slot# * $10
 	lda	motoron,x	; turn it on
 
 	jsr	status
@@ -383,7 +450,7 @@ done:
 	jmp	reboot
 error:
 				; turn motor off, just in case left on
-	ldx	#$60		; slot #6
+	ldx	d2slotio	; slot# * $10
 	lda	motoroff,x	; turn it off
 
 	lda	#<errorm	; print error
@@ -400,7 +467,7 @@ diskerror:
 	jmp	warm
 status:
 	lda	#0
-	sta	$24		; horiz
+	sta	ch		; horiz
 	lda	#22		; vert
 	jsr	movecur		; move cursor to $24,a; 0 base
 	jmp	cleos
@@ -431,7 +498,7 @@ draw_s:				; print a ' ' in the grid
 	adc	trknum
 	ldx	#invsp
 draw:				; a=horiz, y=vert, x=letter
-	sta	$24		; horiz
+	sta	ch		; horiz
 	tya
 	jsr	movecur
 	txa
@@ -525,6 +592,23 @@ left:
 	.byte	"  D|",$0D
 	.byte	"  E|",$0D
 	.byte	"  F|",$0D,0
+diskm:
+	.asciiz	"DISK: "
+diskm2:
+	.asciiz	"S6,D1"
+diskdetm:
+	.asciiz	" (DETECTED)"
+disknotm:
+	.asciiz	" (ASSUMED)"
+d2detect:			; Disk II detection flag
+	.byte	0		; presume not detected
+d2slot:
+	.byte	6		; presume slot 6
+d2slotio:
+	.byte	6 * $10		; presume slot 6 I/O offset
+d2romsig:			; Disk II ROM values used in firmware protocol
+				; every other byte, offs 1,3,5,7
+	.byte	$FF, $20, $FF, $00, $FF, $03, $FF, $3C
 infdata:
 	;.byte	0,0,0,0		; LSB/MSB start, ETA in sec
 	;.byte	0,0,0,0		; LSB/MSB start, ETA in sec

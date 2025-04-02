@@ -1044,8 +1044,9 @@ int main(int argc, char **argv)
 			}
 		}
 
-		// compute pad length, assuming 4 pages max for code
-		zeros += 8*(4 * 256 - sizeof(diskloadcode2)/sizeof(char));
+		// compute pad length; pad to end of last page
+		// XXX: This ignores the trailing infdata table appended later; not a problem for time estimates
+		zeros += 8*(((sizeof(diskloadcode2)/sizeof(char) + 0xFF) & 0xFF00) - sizeof(diskloadcode2)/sizeof(char));
 
 		for(j=0;j<sizeof(diskloadcode3)/sizeof(char);j++) {
 			byte=diskloadcode3[j];
@@ -1260,7 +1261,9 @@ int main(int argc, char **argv)
 			checksum ^= start_table[i];
 		}
 
-		for(i=0;i<4*256 - sizeof(diskloadcode2)/sizeof(char) - start_table_len;i++) {
+		// pad diskload2 to the end of last page
+		const int diskload2pad = ((sizeof(diskloadcode2)/sizeof(char) + 0xFF) & 0xFF00) - sizeof(diskloadcode2)/sizeof(char);
+		for(i=0;i<diskload2pad - start_table_len;i++) {
 			WRITEBYTE(0x00);
 			checksum ^= 0x00;
 		}

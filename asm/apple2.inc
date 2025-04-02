@@ -26,6 +26,7 @@ NMI             := $03FB	; NMI handler thunk
 IRQLOC          := $03FE	; IRQ handler vector
 
 ; I/O addresses
+IOBASE		:= $C000	; base of all I/O
 TAPEIN		:= $C060	; read tape interface
 
 ; Monitor routines
