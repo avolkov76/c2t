@@ -1,12 +1,25 @@
+# Assembly build artifacts
 asm/**
 !asm/*.s
 !asm/*.inc
+!asm/Makefile
 
 # Generated at build time but being kept upstream
 # c2t.h
+# Ephemeral build artifacts (when makeheader barfs)
+c2t.h.[123]
+
+# Linux/BSD/*nix built binaries without platform identifiers
+bin/**
+# but keep Windows binaries checked-in (at least for now)
+# TODO: use releases instead of this?
+!bin/*.exe
 
 # Annoying macOS Finder state detritus
 .DS_Store
+
+# Visual Studio Code workspace, settings
+.vscode
 
 # Installed at build time, not a distributed artifact
 cc65*
