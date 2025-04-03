@@ -8,4 +8,4 @@ diskload3_zp	= $10
 
 inflate		= diskload3_org		; Entry point
 inflate_zp	= diskload3_zp
-inflate_data	= $AE00			; 3 pages (rounded up); diskload2 at $B100
+inflate_data	= $AD00			; 3 pages (rounded up); diskload2 at $B000

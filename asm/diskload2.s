@@ -618,3 +618,4 @@ infdata:
 	;.byte	0		; format flag, 1 = no format
 
 .assert	* + (4*5 + 1) <= diskload3_org, warning, "diskload2 too large; overruns diskload3"
+.assert	inflate_data + $300 <= diskload2_org, warning, "diskload3 inflate_data overruns diskload2"
