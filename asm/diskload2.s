@@ -52,8 +52,6 @@ cmpbuf	=	$9200		; buffer for sector check
 count	=	$900
 
 defd2sl	=	6		; default Disk II slot (not detected)
-d2begsl	=	6		; starting slot for Disk II detection
-				; XXX: IIe starts at 7; safer to start at 6
 d2drvno	=	1		; for now, presume drive 1
 volnum	=	254		; volume number we will use (unlikely to ever change)
 
@@ -86,14 +84,13 @@ start:
 detectdisk:			; detect Disk II controller
 	lda	#0		; using IIe firmware protocol
 	sta	romptr		; init the slot ROM pointer
-	lda	#d2begsl+1	; starting slot#; +1 for DEC
-	ora	#>IOBASE	; to slot ROM page
-	sta	romptr+1	; save the ROM ptr page
+	ldx	#0-1		; first slot index; -1 for INX
 dslotloop:
-	dec	romptr+1	; go down the slots
-	lda	romptr+1
-	cmp	#>IOBASE	; reached the end?
-	beq	notdetected	; reached $C000; controller not found
+	inx			; next slot in order
+ 	lda	d2sltord,x	; get next slot#
+	beq	notdetected	; the end; controller not found
+	ora	#>IOBASE	; to slot ROM page
+	sta	romptr+1	; set the ROM ptr page
 	ldy	#8-1		; 8-byte ROM sig, last byte
 dsigloop:
 	lda	(romptr),y	; read slot ROM byte
@@ -103,8 +100,7 @@ dsigloop:
 	dey			; compare every other byte
 	bpl	dsigloop	; until y<0
 detected:
-	lda	romptr+1	; detected where?
-	and	#$0F		; get slot#
+	lda	d2sltord,x	; get detected slot#
 	sta	d2detect	; detection flag
 	bne	saveslot	; always; and "slot 0" guard for free
 notdetected:
@@ -609,6 +605,12 @@ d2slotio:
 d2romsig:			; Disk II ROM values used in firmware protocol
 				; every other byte, offs 1,3,5,7
 	.byte	$FF, $20, $FF, $00, $FF, $03, $FF, $3C
+d2sltord:			; Disk II customizable slot scan order
+				; XXX: IIe starts at 7; safer to start at 6
+	.byte	6, 5, 4		; conservative scan
+;	.byte	6, 5, 4, 7	; alternate; 7 scanned last
+	.byte	0		; 0-terminated
+
 infdata:
 	;.byte	0,0,0,0		; LSB/MSB start, ETA in sec
 	;.byte	0,0,0,0		; LSB/MSB start, ETA in sec
