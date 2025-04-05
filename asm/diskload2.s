@@ -206,12 +206,7 @@ format:				; format the diskette
 
 ;;; RWTS format (works here)
 	lda	#IOBCMD::format	; format(4) command
-	ldy	#IOB::command	; offset in IOB
-	sta	(iobptr),y	; write it to IOB
-
-	ldy	iobptr		; load IOB pointer
-	lda	iobptr+1	; IOB MSB
-	jsr	rwts		; do it!
+	jsr	rwtscall	; do it!
 	bcs	formaterror
 
 	; Incur the seek to 0 penalty now instead of when writing first data block
@@ -220,12 +215,7 @@ format:				; format the diskette
 	sta	(iobptr),y	; write it to IOB
 
 	lda	#IOBCMD::seek	; seek(0) command
-	ldy	#IOB::command	; offset in IOB
-	sta	(iobptr),y	; write it to IOB
-
-	ldy	iobptr		; load IOB pointer
-	lda	iobptr+1	; IOB MSB
-	jsr	rwts		; invoke RWTS
+	jsr	rwtscall	; invoke RWTS
 	bcs	formaterror
 
 	; XXX: I do not know which Apple II models need this STATUS patch.
@@ -386,12 +376,7 @@ secloop:
 	sta	(iobptr),y	; write it to IOB
 
 	lda	#IOBCMD::write	; write(2) command
-	ldy	#IOB::command	; offset in IOB
-	sta	(iobptr),y	; write it to IOB
-
-	ldy	iobptr		; load IOB pointer
-	lda	iobptr+1	; IOB MSB
-	jsr	rwts		; do it!
+	jsr	rwtscall	; do it!
 	bcs	diskerror
 	lda	#0
 	sta	preg		; fix p reg so mon is happy
@@ -402,12 +387,7 @@ secloop:
 	;sta	(iobptr),y	; write it to IOB
 
 	;lda	#IOBCMD::read	; read(1) command
-	;ldy	#IOB::command	; offset in IOB
-	;sta	(iobptr),y	; write it to IOB
-
-	;ldy	iobptr		; load IOB pointer
-	;lda	iobptr+1	; IOB MSB
-	;jsr	rwts		; do it!
+	;jsr	rwtscall	; do it!
 	;bcs	diskerror
 	;lda	#0
 	;sta	preg		; fix p reg so mon is happy
@@ -467,6 +447,15 @@ status:
 	lda	#22		; vert
 	jsr	movecur		; move cursor to $24,a; 0 base
 	jmp	cleos
+
+rwtscall:			; in: A=RWTS command
+	ldy	#IOB::command	; offset in IOB
+	sta	(iobptr),y	; write command to IOB
+	ldy	iobptr		; load IOB pointer
+	lda	iobptr+1	; IOB MSB
+	jsr	rwts		; call RWTS
+	rts
+	
 draw_w:				; print a 'W' in the grid
 	clc
 	lda	#4
