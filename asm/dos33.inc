@@ -37,7 +37,7 @@ RWTSMAXSEEK	:= $04F8	; RWTS: max track seek retries (steals slot 0 hole)
 RWTSD2CURTRK	:= $04F8	; RWTS: + slot# (starting at 1); current head position on slot/drive 2
 RWTSRETRIES	:= $0578	; RWTS: max number of I/O retries (steals slot 0 hole)
 RWTSSLOTIO1	:= $05F8	; RWTS: temp I/O offset (slot# * $10) of current slot (steals slot 0 hole)
-RWTSSLOTIO2	:= $0578	; RWTS WRDATA: temp I/O offset (slot# * $10) of current slot (steals slot 0 hole)
+RWTSSLOTIO2	:= $0678	; RWTS WRDATA: temp I/O offset (slot# * $10) of current slot (steals slot 0 hole)
 				; NB: non-ZP location used for timing: produces 4-cycle load instruction
 RWTSMAXRECAL	:= $06F8	; RWTS: max recalibration retries (steals slot 0 hole)
 
