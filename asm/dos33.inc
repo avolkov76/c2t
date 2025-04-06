@@ -32,7 +32,7 @@ DOSP3VECSIZE	= $30		; All page 3 vectors installed by DOS, all through IRQ vec
 
 ; DOS RWTS video hole steals (belongs to slots)
 RWTSCURTRK	:= $0478	; RWTS: current head position (steals slot 0 hole)
-RWTSD1CURTRK	:= $04F8	; RWTS: + slot# (starting at 1); current head position on slot/drive 1
+RWTSD1CURTRK	:= $0478	; RWTS: + slot# (starting at 1); current head position on slot/drive 1
 RWTSMAXSEEK	:= $04F8	; RWTS: max track seek retries (steals slot 0 hole)
 RWTSD2CURTRK	:= $04F8	; RWTS: + slot# (starting at 1); current head position on slot/drive 2
 RWTSRETRIES	:= $0578	; RWTS: max number of I/O retries (steals slot 0 hole)
