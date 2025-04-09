@@ -1262,8 +1262,8 @@ int main(int argc, char **argv)
 		}
 
 		// pad diskload2 to the end of last page
-		const int diskload2pad = ((sizeof(diskloadcode2)/sizeof(char) + 0xFF) & 0xFF00) - sizeof(diskloadcode2)/sizeof(char);
-		for(i=0;i<diskload2pad - start_table_len;i++) {
+		const int diskload2pad = ((sizeof(diskloadcode2)/sizeof(char) + start_table_len + 0xFF) & 0xFF00) - (sizeof(diskloadcode2)/sizeof(char) + start_table_len);
+		for(i=0;i<diskload2pad;i++) {
 			WRITEBYTE(0x00);
 			checksum ^= 0x00;
 		}
