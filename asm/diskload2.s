@@ -29,6 +29,10 @@ readtape=	diskload1
 begload	=	diskload1_zp+0	; begin load location LSB/MSB
 endload	=	diskload1_zp+2	; end load location LSB/MSB
 chksum	=	diskload1_zp+4	; checksum location
+
+frtinp	=	diskload1_zp+0	; input pointer (reuses diskload1 space)
+frtoutp	=	diskload1_zp+2	; output pointer (reuses diskload1 space)
+
 ; TODO: continue diskload1_zp+X allocations here?
 secnum	=	$05		; loop var
 trknum	=	$06		; loop var
@@ -38,7 +42,6 @@ trkcnt	=	$09		; track counter (0-6)
 iobptr	=	$0A		; RWTS IOB pointer LSB/MSB
 romptr	=	$0A		; (overload) CX00 slot ROM ptr for Disk II detection
 prtptr	=	$0C		; pointer LSB/MSB
-fmptr	=	$0E		; file manager pointer
 ;inf_zp	=	$10		; inflate vars (10); see diskload3.inc
 temp	=	$1E		; temp var
 ch	=	CH		; cursor horizontal
@@ -195,38 +198,6 @@ setupiob:
 	ldy	#IOB::secsize	; sector size in IOB
 	sta	(iobptr),y	; write it to IOB
 
-format:				; format the diskette
-	lda	infdata+20	; check noformat flag
-	bne	endformat	; if not 0 jump to endformat
-
-	jsr	status
-	lda	#<formatm	; print formatting
-	ldy	#>formatm
-	jsr	print
-
-;;; RWTS format (works here)
-	lda	#IOBCMD::format	; format(4) command
-	jsr	rwtscall	; do it!
-	bcs	formaterror
-
-	; Incur the seek to 0 penalty now instead of when writing first data block
-	lda	#0		; track 0
-	ldy	#IOB::trknum	; offset in IOB
-	sta	(iobptr),y	; write it to IOB
-
-	lda	#IOBCMD::seek	; seek(0) command
-	jsr	rwtscall	; invoke RWTS
-	bcs	formaterror
-
-	; XXX: I do not know which Apple II models need this STATUS patch.
-	; But I am quite certain that IIe does not.
-	lda	#0
-	sta	preg		; fix p reg so mon is happy
-	jmp	endformat
-formaterror:
-	jmp	diskerror
-endformat:
-
 ;;;begin segment loop (5)
 	lda	#0		; buffer LSB
 	ldy	#IOB::bufptr	; offset in IOB
@@ -339,15 +310,25 @@ inf:
 
 	lda	#$00		;dst end +1 lsb
 	cmp	inflate_zp+2
-	bne	error
+	bne	inferror
 	lda	#$80		;dst end +1 msb
 	cmp	inflate_zp+3
-	bne	error
+	beq	infend
+inferror:
+	jmp	error
+infend:
 
 ;;;begin track loop (7)
 	jsr	status
+	lda	infdata+20	; check noformat flag
+	beq	prformat	; if 0, print "format" version
 	lda	#<writem	; print writing
 	ldy	#>writem
+	bne	prwrtmsg	; always; y=page
+prformat:
+	lda	#<formatm	; print "format" version
+	ldy	#>formatm
+prwrtmsg:
 	jsr	print
 
 	lda	#>data
@@ -359,12 +340,24 @@ trkloop:
 	ldy	#IOB::trknum	; offset in IOB
 	sta	(iobptr),y	; write it to IOB
 
+	lda	infdata+20	; check noformat flag
+	bne	persecwr	; if not 0, use per-sector writing
+
+	; formriting variant (write entire formatted tracks)
+	jsr	convtrack	; nibblize the entire track
+	jsr	writetrack	; formrite the entire track
+	bcs	diskerror
+				; fall through and draw the written track
+persecwr:
 ;;;begin sector loop (16), backwards is faster, much faster
 	lda	#$F
 	sta	secnum
 secloop:
 	;jsr	draw_w		; write sector from buffer to disk
 	jsr	draw_s		; write sector from buffer to disk
+	lda	infdata+20	; check noformat flag
+	beq	skipsecwr	; if 0, skip per-sector writing; just draw
+
 	lda	secnum		; sector number
 	ldy	#IOB::secnum	; offset in IOB
 	sta	(iobptr),y	; write it to IOB
@@ -394,6 +387,7 @@ secloop:
 
 	;;; compare code
 
+skipsecwr:
 	;jsr	draw_s		; draw a space in the grid if OK
 
 	dec	secnum
@@ -532,6 +526,43 @@ print1: ora	#$80
 	lda	(prtptr),y
 	bne	print1
 	rts
+
+convtrack:			; nibblize a track worth of data
+	lda	#0
+	sta	frtinp		; sector data LSB
+	sta	frtoutp		; nibblized data LSB
+	lda	buffer		; buffer MSB
+	sta	frtinp+1	; input sector data MSB
+	lda	#>nybbdata_org	; nibble buffer MSB
+	sta	frtoutp+1	; output nibblized data MSB
+	jsr	nibbtrack	; nibblize the track
+	rts
+
+writetrack:			; write entire track while formatting
+	; seek to track now and fail early
+	; RWTS will take care of motor spin-up, and
+	; it will still be running when we begin writing
+	lda	#IOBCMD::seek	; seek(0) command
+	jsr	rwtscall	; invoke RWTS
+	bcs	wrtrkret	; return with error (carry=1)
+
+	lda	#<nybbdata_org	; nibblized buffer LSB
+	ldy	#IOB::bufptr	; offset in IOB
+	sta	(iobptr),y	; store in IOB
+	lda	#>nybbdata_org	; nibblized buffer MSB
+	iny			; offset in IOB
+	sta	(iobptr),y	; store in IOB
+
+	lda	#IOBCMD::frmrite ; custom; for bug detection
+	ldy	#IOB::command	; offset in IOB
+	sta	(iobptr),y	; write command to IOB
+
+	ldy	iobptr		; load IOB pointer
+	lda	iobptr+1	; IOB MSB
+	jsr	formritep	; formrite the track
+wrtrkret:
+	rts
+
 title:
 	.asciiz	"INSTA-DISK"
 errorm:
@@ -549,7 +580,7 @@ loadm2:
 secm:
 	.asciiz	" SEC. "
 formatm:
-	.asciiz	"FORMATTING DISK "
+	.asciiz	"FORMRITING DATA "
 waitm:
 	.asciiz	"WAITING FOR DATA: "
 writem:
@@ -600,6 +631,8 @@ d2sltord:			; Disk II customizable slot scan order
 ;	.byte	6, 5, 4, 7	; alternate; 7 scanned last
 	.byte	0		; 0-terminated
 
+.include "formrite.inc"
+
 infdata:
 	;.byte	0,0,0,0		; LSB/MSB start, ETA in sec
 	;.byte	0,0,0,0		; LSB/MSB start, ETA in sec
@@ -610,3 +643,5 @@ infdata:
 
 .assert	* + (4*5 + 1) <= diskload3_org, warning, "diskload2 too large; overruns diskload3"
 .assert	inflate_data + $300 <= diskload2_org, warning, "diskload3 inflate_data overruns diskload2"
+.assert	nybbdata_org + nybbdata_size <= diskload2_org, warning, "nybbdata segment overruns diskload2"
+.assert <nybbdata_org = $00, error, "nybbdata segment must be page-aligned"

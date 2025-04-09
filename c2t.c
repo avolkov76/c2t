@@ -1292,13 +1292,8 @@ int main(int argc, char **argv)
 			//appendtone(&output,&outputlength,6000,rate,1,0,&offset);
 
 //timing
-			if(i==0) {
-				if(!noformat)
-					j=27; // XXX: -1 sec for not writing catalog or DOS image
-				else
-					j=0;
-			}
-			else {
+			j=0;
+			if(i>0) {
 				//j = 6 + ceil(inflate_times[i-1]);  // 6 = write track time, may need to make it 7
 				// disk ][ verified (format and no-format)
 				// Virtual ][ emulator verified (format and no-format, 8K only)
@@ -1311,9 +1306,12 @@ int main(int argc, char **argv)
 				// CFFA3000 3.1 failed with IBM 4GB Microdrive (too slow)
 				// Nishida Radio SDISK // (no-format only)
 			}
-			// XXX: diskload2 seeks to 0 after formatting
-			if(noformat && i==1) // seek time for track 0, just in case
-				j+=2;
+			if(i==1) {
+				j+=2; // seek time for track 0, just in case
+				if (!noformat) {
+					j+=3; // track 0 format time; determines inter-sector padding
+				}
+			}
 
 /* count down code
 			for(;j>=0;j--) {

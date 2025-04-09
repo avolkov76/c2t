@@ -3,12 +3,25 @@
 
 ; DOS ZP locations
 RWTSTMP1	:= $26		; RWTS scratch register; used all over
+RWTSTMP2	:= $27		; Sector addr checksum scratch register while RWTS is reading
 RWTSTMP3	:= $2A		; Current track scratch register while RWTS is seeking
 RWTSTMP4	:= $2B		; Current slot I/O ofs scratch register while RWTS is seeking
+RWTSRDCHKS	:= $2C		; Sector addr checksum while RWTS is reading
+RWTSRDSECN	:= $2D		; Sector addr sector# while RWTS is reading
+RWTSRDTRKN	:= $2E		; Sector addr track# while RWTS is reading
+RWTSRDVOLN	:= $2F		; Sector addr volume# while RWTS is reading
+
 RWTSTMP6	:= $35		; Current drive scratch register while in RWTS
 RWTSDCTPTR	:= $3C		; Device Charateristics Table (DCT) pointer while in RWTS
-RWTSUSRBUF	:= $3E		; 256-byte user buffer for sector read/write while in RWTS
+RWTSUSRBUF	:= $3E		; 256-byte user buffer pointer for sector read/write while in RWTS
 RWTSTMP8	:= $3E		; Sector addr mask scratch register while RWTS is formatting
+
+RWTSWRSECN	:= $3F		; Sector addr sector# while RWTS is formatting
+RWTSWRVOLN	:= $41		; Sector addr volume# while RWTS is formatting
+RWTSWRTRKN	:= $44		; Sector addr track# while RWTS is formatting
+RWTSSECPAD	:= $45		; Inter-sector sync padding size while RWTS is formatting
+				; NB: Padding is determined during track 0 format
+				;    and remains the same for the rest of the disk.
 
 RWTSDLY		:= $46		; Spin-up/track switch delay counter LSB
 				; NB: DOS 3.3 RWTS does *not* initialize it; 0 after first wait.
@@ -53,14 +66,23 @@ DOSIOBPTR	:= $AAC1	; RWTS default IOB pointer (see IOB); returned by DOSRWTSIOB
 DOSDEFIOB	:= $B7E8	; Default RWTS IOB (see IOB); can be used by anyone; pointed to by DOSIOBPTR
 DOSDEFDCT	:= $B7FB	; Default RWTS DCT; can be used by anyone; referenced by DOSDEFIOB
 DOSRWTSEP	:= $B7B5	; RWTS entry point; disables interrupts
-DOSRDSECDATA	:= $B8DC	; RWTS read sector data routine; waits up to $20 nybbles for sector data
-DOSRDSECADDR	:= $B944	; RWTS read sector address routine; waits up to $304 nybbles for sector addr
-DOSWRSECDATA	:= $BC56	; RWTS write sector data routine; writes prenibblized buffers
-DOSWRSECADDR	:= $BC56	; RWTS write sector address routine; only used when formatting
+DOSENCSEC	:= $B800	; RWTS encode sector (nibblize); into HI/LO buffers
+DOSWRSECDAT	:= $B82A	; RWTS write sector data routine; from nibblized HI/LO buffers
+DOSDECSEC	:= $B8C2	; RWTS decode sector (denibblize); from nibblized HI/LO buffers
+DOSRDSECDAT	:= $B8DC	; RWTS read sector data routine; into HI/LO buffers; waits up to $20 nybbles for sector data
+DOSRDSECADR	:= $B944	; RWTS read sector address routine; waits up to $304 nybbles for sector addr
+DOSSEEKTRK	:= $B9A0	; RWTS seek to track routine
+DOSENYBTBL	:= $BA29	; RWTS encode disk nybble table; 64 bytes
+DOSDNYBTBL	:= $BA96	; RWTS decode disk nybble table; 106 bytes ($96-$FF)
+DOSNIBHIBUF	:= $BB00	; RWTS nibblized sector data high bits (6/byte); $100 bytes
+DOSNIBLOBUF	:= $BC00	; RWTS nibblized sector data low bits (2/byte); $56 bytes
+DOSWRSECADR	:= $BC56	; RWTS write sector address routine; only used when formatting
 DOSRWTSNAKED	:= $BD00	; Actual RWTS; naked and alone
-DOSSETTRK	:= $BE5A	; RWTS set track routine
-DOSFMTDSK	:= $BEAF	; RWTS format disk routine
-DOSFMTTRK	:= $BF0D	; RWTS format track routine
+DOSSETTRK	:= $BE5A	; RWTS set track routine; calls DOSSEEKTRK
+DOSFMTDSK	:= $BEAF	; RWTS format disk routine; calls DOSFMTTRK
+DOSFMTTRK	:= $BF0D	; RWTS format track routine; calls DOSWRSECADR, DOSWRSECDAT, DOSRDSECADR, DOSRDSECDAT
+DOSVFYTBL	:= $BFA8	; RWTS sector verify status table during formatting; 16 bytes
+DOSINTLTBL	:= $BFB8	; RWTS sector interleave table; 16 bytes
 ; TODO: more
 
 ; DOS structures and enums
@@ -93,6 +115,7 @@ DOSFMTTRK	:= $BF0D	; RWTS format track routine
 	read	= 1
 	write	= 2
 	format	= 4
+	frmrite	= format+write	; NB: custom command; for bug detection
 .endenum
 
 .struct DCT	; RWTS Device Characteristics Table
