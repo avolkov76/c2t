@@ -1305,6 +1305,10 @@ int main(int argc, char **argv)
 				// CFFA3000 3.1 verified with USB stick (no-format only)
 				// CFFA3000 3.1 failed with IBM 4GB Microdrive (too slow)
 				// Nishida Radio SDISK // (no-format only)
+
+				if (!noformat) {
+					j+=2; // extra full-nybblization time taken by formrite
+				}
 			}
 			if(i==1) {
 				j+=2; // seek time for track 0, just in case

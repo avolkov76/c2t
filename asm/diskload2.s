@@ -527,15 +527,15 @@ print1: ora	#$80
 	bne	print1
 	rts
 
-convtrack:			; nibblize a track worth of data
+convtrack:			; nybblize a track worth of data
 	lda	#0
 	sta	frtinp		; sector data LSB
-	sta	frtoutp		; nibblized data LSB
+	sta	frtoutp		; nybblized data LSB
 	lda	buffer		; buffer MSB
 	sta	frtinp+1	; input sector data MSB
-	lda	#>nybbdata_org	; nibble buffer MSB
-	sta	frtoutp+1	; output nibblized data MSB
-	jsr	nibbtrack	; nibblize the track
+	lda	#>nybbdata_org	; nybble buffer MSB
+	sta	frtoutp+1	; output nybblized data MSB
+	jsr	nybbtrack	; nybblize the track
 	rts
 
 writetrack:			; write entire track while formatting
@@ -546,10 +546,10 @@ writetrack:			; write entire track while formatting
 	jsr	rwtscall	; invoke RWTS
 	bcs	wrtrkret	; return with error (carry=1)
 
-	lda	#<nybbdata_org	; nibblized buffer LSB
+	lda	#<nybbdata_org	; nybblized buffer LSB
 	ldy	#IOB::bufptr	; offset in IOB
 	sta	(iobptr),y	; store in IOB
-	lda	#>nybbdata_org	; nibblized buffer MSB
+	lda	#>nybbdata_org	; nybblized buffer MSB
 	iny			; offset in IOB
 	sta	(iobptr),y	; store in IOB
 

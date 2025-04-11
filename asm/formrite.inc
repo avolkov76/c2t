@@ -6,8 +6,8 @@
 inptr	=	frtinp		; input pointer (reuses diskload1 space)
 outptr	=	frtoutp		; output pointer (reuses diskload1 space)
 
-hibptr	=	RWTSTMP3	; HI nibble output ptr (work register; reuses DOS scratch regs)
-lobptr	=	RWTSDCTPTR	; LO nibble output ptr (work register; reuses DOS DCT ptr)
+hibptr	=	RWTSTMP3	; HI nybble output ptr (work register; reuses DOS scratch regs)
+lobptr	=	RWTSDCTPTR	; LO nybble output ptr (work register; reuses DOS DCT ptr)
 tmpreg1	=	RWTSTMP1	; scratch register 1 (reuses DOS scratch reg)
 tmpreg2	=	RWTSTMP2	; scratch register 2 (reuses DOS scratch reg)
 
@@ -21,14 +21,14 @@ rwtsiobp=	RWTSIOBPTR	; RWTS standard IOB pointer; reused
 lonbuf	=	DOSNIBLOBUF	; LO nibble encoding space (RWTS secondary buffer; safe to use)
 
 
-; * Nibblize a track worth of data. Converts 16 secors to encoded
-; *   HI/LO nibble buffers semi-ready for writing to disk.
+; * Nybblize a track worth of data. Converts 16 secors to fully-encoded
+; *   HI/LO nybble buffers ready for writing to disk.
 ; * HI buffers: outptr, $1000 bytes (16 sectors, $100 each)
 ; * LO buffers: outptr + $1000, $800 bytes (16 sectors, $80 each)
 ; * In: inptr=data pointer; outptr=HI/LO buffers pointer
 ; * Out: nothing
 ; * Destroys: A,X,Y,flags,inptr
-.proc	nibbtrack
+.proc	nybbtrack
 	lda	#0
 	sta	hibptr		; buffer ptr LSB (assume page-aligned)
 	sta	tmpreg1		; encode sectors 0-15
@@ -41,9 +41,8 @@ secloop:
 	adc	outptr+1	; calc HI buf output MSB
 	sta	hibptr+1	; store HI buf output MSB
 
-	lda	#2		; lobptr = outptr + $1000 + sector# * $80 + 1
-				; NB: +1 so that disk writing code does not cross page boundaries
-	sta	lobptr		; 2 -> LO buffer ptr LSB (will be shifted by 1)
+	lda	#0		; lobptr = outptr + $1000 + sector# * $80
+	sta	lobptr		; 0 -> LO buffer ptr LSB
 	lda	tmpreg2		; disk sector#
 	lsr	a		; A=sector# / 2; odd sector# -> carry
 	ror	lobptr		; odd sector# -> $80 LSB; carry=0 after
@@ -51,7 +50,7 @@ secloop:
 	adc	outptr+1	; A = outptr MSB + $10 + sector# / 2
 	sta	lobptr+1	; store LO buf output MSB
 
-	jsr	nibbsector	; nibblize sector
+	jsr	nybbsector	; nybblize sector
 
 	inc	inptr+1		; next sector page
 	inc	tmpreg1
@@ -61,12 +60,13 @@ secloop:
 	rts
 .endproc
 
-; * Nibblize sector routine. Converts 256 bytes of data to encoded 6-bit
-; *   HI/LO nibble buffers semi-ready for writing to disk.
+
+; * Nybblize sector routine. Converts 256 bytes of data to fully-encoded
+; *   HI/LO nybble buffers ready for writing to disk.
 ; * In: inptr=data; hibptr=HI buffer pointer; lobptr=LO buffer pointer
 ; * Out: nothing
 ; * Destroys: A,X,Y,flags,RWTS LO buffer
-.proc	nibbsector
+.proc	nybbsector
 	; split 256 data bytes into HI bits ($100 bytes) and LO bits ($56 bytes)
 	; two low bits are shifted out from each of the data bytes and shifted into
 	; the circular LO buffer.
@@ -103,12 +103,60 @@ maskloop:
 	dey			; next nibble
 	bpl	maskloop	; while y>=0
 
+	; convert HI/LO buffers to disk nybbles
+	; LO nybbles in reverse order, then HI nybbles in forward order.
+	; the nybbles are chain-EOR'ed, and the last value is the checksum.
+	; LO buffer expands to $57 and all data shifts by 1 byte due to chaining.
+	lda	#0		; initial chain value
+	ldy	#$55		; LO nybble index $55..00, reverse order
+	bne	skiplon0	; always; skip first reload
+lonloop:
+	lda	(lobptr),y	; get LO nybble
+	dey			; advance to next
+skiplon0:
+	eor	(lobptr),y	; chain to next
+	tax			; index into to-nybble table
+	lda	DOSENYBTBL,x	; 6-bit -> disk nybble
+	iny			; back out index to store the nybble
+	sta	(lobptr),y	; store it
+	dey			; next
+	bne	lonloop		; .. in reverse order
+
+	; chain last-out LO nybble with first-out HI one
+	lda	(lobptr),y	; get LO nybble
+	eor	(hibptr),y	; chain to first HI nybble
+	tax			; index into to-nybble table
+	lda	DOSENYBTBL,x	; 6-bit -> disk nybble
+	sta	(lobptr),y	; store as last-out LO
+
+	; convert HI buffer to disk nybbles, in forward order.
+hinloop:
+	lda	(hibptr),y	; load current HI nybble
+	iny			; advance to next
+	beq	chksum		; once y=0, all HI are done; go checksum
+	eor	(hibptr),y	; chain to next
+	tax			; index into to-nybble table
+	lda	DOSENYBTBL,x	; 6-bit -> disk nybble
+	dey			; back out index to store the nybble
+	sta	(hibptr),y	; store it
+	iny			; next, in forward order
+	bne	hinloop		; always; Y never hits 0 here
+
+	; output the last HI value as checksum
+	; EOR chain integrity will be verified using this value
+	; when the sector is read from disk.
+chksum:				; A is currenly the last HI nybble
+	tax			; checksum to x; index into to-nybble table
+	lda	DOSENYBTBL,x	; 6-bit -> disk nybble
+	dey			; back out index to last HI nybble (was 0)
+	sta	(hibptr),y	; store it
+
 	rts
 .endproc
 
 
 ; * Track formriting entry point. Writes an entire track while formatting it.
-; * In: A/Y=IOB pointer (like RWTS); IOB::bufptr=nibblized track data (see nibbtrack)
+; * In: A/Y=IOB pointer (like RWTS); IOB::bufptr=nybblized track data (see nybbtrack)
 ; * Out: carry 0=ok, 1=error
 ; * Destroys: A,X,Y,flags,several DOS ZP locations
 .proc	formritep
@@ -182,7 +230,7 @@ return:
 ; * Track formriting routine. Writes an entire track while formatting it.
 ; * This is a modified DOS 3.3 RWTS track format routine ($BF0D).
 ; * In: Standard RWTS IOB; X=slot I/O offset
-; *    IOB::bufptr=nibblized track data (see nibbtrack)
+; *    IOB::bufptr=nybblized track data (see nybbtrack)
 ; * Out: carry 0=ok, 1=error
 ; * Modifies: $45 (RWTSSECPAD)
 ; * Destroys: A,Y,flags,$27,$3E,$3F,$41,$44
@@ -337,20 +385,21 @@ success:
 .endproc	; formtrack
 
 
-; * Write nibblized sector data routine.
+; * Write nybblized sector data routine.
 ; * (!) Time-critical; MUST NOT cross page boundaries.
-; * This is a modified DOS 3.3 RWTS sector data write routine ($B82A).
+; * This is a heavily modified DOS 3.3 RWTS sector data write routine ($B82A).
 ; * In: Standard DOS RWTS tables; hibptr/lobptr setup; X=slot I/O offset
 ; * Out: carry 0=ok, 1=error
 ; * Modifies: hibptr/lobptr pointers
-; * Destroys: A,Y,flags,$27
+; * Destroys: A,Y,flags
 ; alternative 1:  .align  $100			; do not cross page boundaries
 ; alternative 2:  .org  diskload2_org + $600	; force page alignment
 	.res	<($100-(<*))	; ca65 ".align $100" without silly warnings
 .proc	wrsecdata
 	; DOS spec: +39 cycles since last sector address nybble write
 	sec			; 2 - preemptive error indicator
-	stx	RWTSTMP2	; 3 - save I/O offset for later 3-cycle reload
+	pha			; 3 - waste time; replaces temp I/O offset store
+	pla			; 4 - waste time; replaces temp I/O offset store
 
 	lda	wrshifter,x	; 4 - write-prot test
 	lda	wrprot,x	; 4 - read write-prot; sequencer to idle
@@ -358,11 +407,8 @@ success:
 	jmp	return		; abort on write-prot (BMI cannot reach it now)
 
 wrtok:
-	; hack to reproduce the number of silence cycles between sectors per DOS spec:
-	;   use time-wasted code locations to copy pointers
-	lda	lobptr		; 3 - waste time
-	lda	lobptr		; 3 - copy LO buf ptr LSB
-	sta	loa1+1		; 4 - .. to abs access location
+	lda	lobptr		; 3 - waste time; repro timing per DOS spec
+	lda	lobptr		; 3 - waste time; repro timing per DOS spec
 
 	; write 5 auto-sync nybbles
 	; auto-sync nybbles are $FF (32 cycles) followed by two 0 bits (8 cycles)
@@ -371,10 +417,9 @@ wrtok:
 				; ([!] 67=32+32+3 cycles since last sector address outro nybble; DOS spec)
 	ora	sequencer,x	; 4 - shift out (A=FF; ORA only effects N/Z flags)
 
-	; use time-wasted code locations to copy pointers (hack)
-	lda	lobptr+1	; 3 - copy LO buf ptr MSB
-	sta	loa1+2		; 4 - .. to abs access location
-	lda	#$FF		; 2 - reload sync nybble
+	pha			; 3 - waste time
+	pla			; 4 - waste time
+	nop			; 2 - waste time
 
 	ldy	#4		; 2 - (4 more sync nybbles)
 syncloop:
@@ -383,13 +428,9 @@ syncloop:
 	dey			; 2 - next sync nybble
 	bne	syncloop	; 3 (branch) or 2 (fall through)
 
-	; use time-wasted code locations to copy pointers (hack)
-	lda	hibptr+1	; 3 - copy HI buf ptr MSB
-	sta	hia1+2		; 4 - .. to abs access location
-
 	; write sector data intro sequence
 	lda	#$D5		; 2 - intro nybble
-	jsr	wr2nyb15	; 23=6+2+15 - write intro nybble
+	jsr	wr9nyb15	; 30=6+9+15 - write intro nybble
 				; [!] (32+4 cycles to first intro nybble; DOS spec)
 	lda	#$AA		; 2 - intro nybble
 	jsr	wr9nyb15	; 30=6+9+15 - write intro nybble
@@ -398,53 +439,46 @@ syncloop:
 	jsr	wr9nyb15	; 30=6+9+15 - write intro nybble
 				; (32 cycles to nybble)
 
-	; write LO buffer; $56 nybbles
-	; the buffers were pre-nibblized by nibbsector.
-	tya			; 2 - A=0, EOR chain seed
-	ldy	#$56		; 2 - $56 LO nybbles
-				; now: +19 cycles from intro nybble
+	; write LO buffer; $56+1 nybbles; 1 was added during encoding
+	; the buffers were pre-nybblized for disk by nybbsector.
+	ldy	#$56		; 2 - $56+1 LO nybbles
+				; now: +17 cycles from intro nybble
+	bne	lonlm2		; 3 (always); skip to +16 (+1 cycle to align)
 
-	; NB: this wait is now artificial to reproduce [+4] DOS spec.
-	;   disks would work fine without it (with perfect 32-cycle)
-	nop			; 2 - waste time (for +4 nybble DOS spec)
-	nop			; 2 - waste time (for +4 nybble DOS spec)
-
-lonloop:			; (loop: +19 cycles from nybble)
-loa1:	eor	$2000,y		; 4 (no page cross) - chain to next LO nibble
-				; XXX: the address will be patched (code above)
-	tax			; 2
-	lda	DOSENYBTBL,x	; 4 - 6-bit -> disk nybble
-	ldx	RWTSTMP2	; 3 - reload I/O offset
+lonloop:			; (loop: +14 cycles from nybble)
+	nop			; 2 - waste time
+lonlm2:				; (loop: +16 cycles from nybble)
+	nop			; 2 - waste time
+	nop			; 2 - waste time
+	lda	(lobptr),y	; 5 (no page cross) - get LO nybble
+	pha			; 3 - waste time
+	pla			; 4 - waste time
 	sta	wrshifter,x	; 5 - load for write
 				; [!] (32+4 cycles to first data nybble; DOS spec)
 				; (32 cycles per nybble)
 	lda	sequencer,x	; 4 - shift out
-	lda	(lobptr),y	; 5 (no page cross) - get current LO nibble
 	dey			; 2 - next, in reverse order
-	bne	lonloop		; 3 (branch) or	2 (fall	through)
+	bpl	lonloop		; 3 (branch) or	2 (fall	through)
 	
 	; write HI buffer; $100 nybbles; last nybble is checksum
 	; the buffers were pre-encoded for disk by nybbsector.
-hinloop:			; (loop: +18 cycles from nybble)
-	eor	(hibptr),y	; 5 (no page cross) - chain to next HI nibble
-	tax			; 2
-	lda	DOSENYBTBL,x	; 4 - 6-bit -> disk nybble
-	ldx	RWTSTMP2	; 3 - reload I/O offset
+	iny			; 2 - 0 -> Y
+	beq	hinlm2		; 3 (always); skip to +18 (+1 cycle to align)
+hinloop:			; (loop: +16 cycles from nybble)
+	nop			; 2 - waste time
+hinlm2:				; (loop: +18 cycles from nybble)
+	nop			; 2 - waste time
+	lda	(hibptr),y	; 5 (no page cross) - get LO nybble
+	pha			; 3 - waste time
+	pla			; 4 - waste time
 	sta	wrshifter,x	; 5 - load for write
 				; (32 cycles to/per nybble)
 	lda	sequencer,x	; 4 - shift out
-hia1:	lda	$1000,y		; 4 (no page cross) - get current HI nibble
-				; XXX: the address will be patched (code above)
+	nop			; 2 - waste time
 	iny			; 2 - next, in forward order
 	bne	hinloop		; 3 (branch) or 2 (fall through)
 
-	; write data checksum
-	tax			; 2 - checksum to index
-	lda	DOSENYBTBL,x	; 4 - 6-bit -> disk nybble
-	ldx	RWTSTMP2	; 3 - reload I/O offset (X was destroyed)
-	jsr	wr0nyb15	; 21=6+0+15 - write checksum nybble
-				; (32 cycles to	nybble)
-
+	; now: +15 cycles from checksum nybble
 	; NB: at this point, the HI/LO pointers have served their purpose
 	;   and can now be staged for the next sector
 	; use time-wasted code locations to advance pointers (constant-time math)

@@ -1415,6 +1415,10 @@ int main(int argc, char **argv)
 				// CFFA3000 3.1 failed with IBM 4GB Microdrive (too slow)
 				// Nishida Radio SDISK // (no-format only)
 
+				if (!noformat) {
+					j+=2; // extra full-nybblization time taken by formrite
+				}
+
 				registerevent(events,buf.length,"Inflate + Write Delay (2000 Hz)");
 			}
 			if(i==1) {
