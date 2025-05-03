@@ -648,25 +648,6 @@ int main(int argc, char **argv)
 			ram[0xBA00 + j] = checksum;
 			endj = 0xBA00 + j + 1;
 
-			if(k8) {
-				for(j=(0x823 - 0x80C);j<sizeof(fastload8000)/sizeof(char);j++)
-					ram[0xBE80 - (0x823 - 0x80C) + j] = fastload8000[j];
-				ram[0xBE80 - (0x823 - 0x80C) + j++] = (0xBA00 - cmp_len) & 0xFF;
-				ram[0xBE80 - (0x823 - 0x80C) + j++] = (0xBA00 - cmp_len) >> 8;
-				ram[0xBE80 - (0x823 - 0x80C) + j++] = endj & 0xFF;
-				ram[0xBE80 - (0x823 - 0x80C) + j++] = endj >> 8;
-				ram[0x00] = 0xFF; // chksum initial value
-				ram[0xBF0D] = 0x00; // BRK @ LDA $00 [chksum]
-
-				reset6502();
-				exec6502(0xBEE3);
-
-				if(ram[0x00] != 0)
-					fprintf(stderr,"WARNING: simulated checksum failed: %02X\n",ram[0x00]);
-
-				inflate_time += clockticks6502/1023000.0;
-			}
-
 			//zero page src
 			ram[0x0] = (0xBA00 - cmp_len) & 0xFF;
 			ram[0x1] = (0xBA00 - cmp_len) >> 8;
@@ -1171,26 +1152,6 @@ int main(int argc, char **argv)
 				checksum ^= cmp_data[j];
 			}
 			ram[0x8FFF] = checksum;
-
-			//compute chksum time
-			if(k8) {
-				for(j=(0x859 - 0x80C);j<diskloadcode_len;j++)
-					ram[0x9000 - (0x859 - 0x80C) + j] = diskloadcode[j];
-				ram[0x00] = (0x8FFF - cmp_len) & 0xFF;
-				ram[0x01] = (0x8FFF - cmp_len) >> 8;
-				ram[0x02] = 0x00;
-				ram[0x03] = 0x90;
-				ram[0x04] = 0xFF; // chksum initial value
-				ram[0x908A] = 0x00; // BRK @ LDA $04 [chksum]
-
-				reset6502();
-				exec6502(0x9065);
-
-				if(ram[0x04] != 0)
-					fprintf(stderr,"WARNING: simulated checksum failed: %02X\n",ram[0x04]);
-
-				inflate_times[i] += clockticks6502/1023000.0;
-			}
 
 			//zero page src
 			ram[0x10] = (0x8FFF - cmp_len) & 0xFF;

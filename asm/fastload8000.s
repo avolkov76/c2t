@@ -40,17 +40,40 @@ fast:
 	lda	ld_beg+1	; load begin MSB location
 	sta	store+2		; store it
 
+	lda	#$ff		; initial
+	sta	chksum		; .. checksum value
+
 	ldx	#0		; set X to 0
-	lda	#1		; set A to 0 
 
 nsync:	bit	tapein		; 4 cycles, sync bit ; first pulse
 	bpl	nsync		; 2 + 1 cycles
 
-main:	ldy	#0		; 2 set Y to 0 
+main:	lda	#1		; 2, load sentinel bit
+	clc			; 2, clear carry (byte complete flag)
+nextbit:
+	ldy	#1		; 2, one iteration of ploop always consumed	
 
-psync:	bit	tapein		; 
-	bmi	psync
+psync:	bit	tapein		; 4
+	bmi	psync		; 3  [7 cycle loop]
 
+	; consume up to 3x9 ploop iteration times (wasted time otherwise)
+	bcc	plpm6		; 2(3), skip if byte not complete  [3+6=9 cycles]
+
+	eor	chksum		; 3, incorporate byte
+	sta	chksum		; 3, .. into the checksum
+	lda	#1		; 2, reload sentinel bit
+
+	iny			; 2, two iterations consumed
+	inx			; 2 cycles
+	bne	ploop		; 2(3)  [17 cycles]
+
+	inc	store+2		; 6 cycles
+	iny			; 2, three iterations consumed
+	bne	ploop		; 3 (always)  [27 cycles]
+
+plpm6:	nop			; 2, waste time for alignment
+plpm4:	nop			; 2, waste time for alignment
+	nop			; 2, waste time for alignment
 ploop:	iny			; 2 cycles
 	bit	tapein		; 4 cycles
 	bpl	ploop		; 2 +1 if branch, +1 if in another page
@@ -63,17 +86,13 @@ ploop:	iny			; 2 cycles
 	bpl	main		; 2(3)
 
 	cpy	#$07		; 2, if Y<, then clear carry, if Y>= set carry
-store:	rol	store+1,x	; 7, roll carry bit into store
-	ldy	#0		; 2
-	asl			; 2 A*=2
-	bne	main		; 2(3)
-	lda	#1		; 2
-	inx			; 2 cycles
-	bne	main		; 2(3)
-	inc	store+2		; 6 cycles
-	jmp	main		; 3 cycles
-				; 34 subtotal max
-				; 36 subtotal max
+	rol			; 2, shift carry into A, shift sentinel out into carry
+	bcc	nextbit		; 2(3), byte not complete
+
+store:	sta	store+1,x	; 5, store data byte
+	jmp	nextbit		; 3, next byte
+				; [24 cycles]
+
 endcode:  
 	txa			; write end of file location + 1
 	clc
@@ -89,34 +108,6 @@ endcheck:			; check for match of expected length
 	cmp	store+2
 	bne	error
 sumcheck:
-	lda	#0
-	sta	pointer
-	ldx	ld_beg+1
-	stx	pointer+1
-	lda	#$ff		; init checksum
-	ldy	ld_beg
-sumloop:
-	eor	(pointer),y
-
-	;last page?
-	cpx	ld_end+1
-	beq	last
-	iny
-	bne	sumloop
-	inx
-	stx	pointer+1
-	; is it the last page now? (ld_end=$xx00 edge case)
-	cpx	ld_end+1
-	bne	sumloop
-	beq	last2
-last:
-	iny
-last2:
-	cpy	ld_end
-	bcc	sumloop
-
-;	sty	$01
-	sta	chksum
 	lda	chksum
 	bne	sumerror
 
