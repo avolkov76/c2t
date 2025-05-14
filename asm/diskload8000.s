@@ -43,9 +43,9 @@ phase1:
 	lda	#>diskload2_org	; store begin location MSB
 	sta	begload+1
 				; end of DOS + 1 for comparison
-	lda	#<dosrwts_end+1	; store end location LSB
+	lda	#<(dosrwts_end+1)  ; store end location LSB
 	sta	endload
-	lda	#>dosrwts_end	; store end location MSB
+	lda	#>(dosrwts_end+1)  ; store end location MSB
 	sta	endload+1
 
 	jsr	readtape	; get the code
