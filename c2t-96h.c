@@ -795,7 +795,7 @@ int main(int argc, char **argv)
 				if(cd)
 					length += sizeof(fastloadcd)/sizeof(char);
 				else {
-					length += sizeof(autoloadcode)/sizeof(char);
+					length += sizeof(autoload1333)/sizeof(char);
 					move_len = (0x81A - 0x80C);
 				}
 
@@ -900,9 +900,9 @@ int main(int argc, char **argv)
 						checksum ^= fastloadcd[i];
 					}
 				else
-					for(i=0;i<sizeof(autoloadcode)/sizeof(char);i++) {
-						WRITEBYTE(autoloadcode[i]);
-						checksum ^= autoloadcode[i];
+					for(i=0;i<sizeof(autoload1333)/sizeof(char);i++) {
+						WRITEBYTE(autoload1333[i]);
+						checksum ^= autoload1333[i];
 					}
 
 		// append table

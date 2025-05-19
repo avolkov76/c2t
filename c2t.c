@@ -642,12 +642,33 @@ int main(int argc, char **argv)
 	}
 
 	if(autoload) {
-		char eta[40], loading[]=" LOADING ";
+		int eta;
+		char loading[autoload_mlen+50]; // "\rLOADING ...";
+		size_t nameavail;
 		unsigned char byte, checksum, *cmp_data, table[12];
+		unsigned char *autoloadcode;
+		size_t autoloadcode_len;
 		unsigned long ones=0, zeros=0;
 		size_t cmp_len;
-		unsigned int length, move_len;
+		unsigned int length;
 		int i, j;
+
+		if(fast) {
+			autoloadcode = fastload9600;
+			autoloadcode_len = sizeof(fastload9600)/sizeof(char);
+		}
+		else if(k8) {
+			autoloadcode = fastload8000;
+			autoloadcode_len = sizeof(fastload8000)/sizeof(char);
+		}
+		else if(cd) {
+			autoloadcode = fastloadcd;
+			autoloadcode_len = sizeof(fastloadcd)/sizeof(char);
+		}
+		else /* 1333 autoload */ {
+			autoloadcode = autoload1333;
+			autoloadcode_len = sizeof(autoload1333)/sizeof(char);
+		}
 
 		appendtone(&buf,770,4.0+tape,0);
 		appendtone(&buf,2500,0,0.5);
@@ -769,38 +790,24 @@ int main(int argc, char **argv)
 			fprintf(stderr,"\n");
 		}
 
-		sprintf(eta,", ETA %d SEC. ",(int) (ones/(float)freq1 + zeros/(float)freq0 + 0.5 + 0.25 + (3.75 * ((k8|cd|fast) == 0))) );
-
-		length = sizeof(basic)/sizeof(char) + sizeof(table)/sizeof(char) + strlen(loading) + strlen(segments[0].filename) + strlen(eta) + 1;
-
-		move_len = (0x823 - 0x80C);
-		if(fast)
-			length += sizeof(fastload9600)/sizeof(char);
-		else
-			if(k8)
-				length += sizeof(fastload8000)/sizeof(char);
+		eta = (int) (ones/(float)freq1 + zeros/(float)freq0 + 0.5 + 0.25 + (3.75 * ((k8|cd|fast) == 0)));
+		// calculate space available for filename
+		sprintf(loading,"\rLOADING %s, ETA %d SEC.","",eta);
+		nameavail = autoload_mlen - 1 - strlen(loading);
+		if(nameavail < strlen(segments[0].filename)) {
+			segments[0].filename[nameavail] = '\0';
+			fprintf(stderr,"WARNING: Loading message buffer overflow: truncating display filename to %s\n\n",segments[0].filename);
+		}
+		sprintf(loading,"\rLOADING %s, ETA %d SEC.",segments[0].filename,eta);
+		// post-process the LOADING message
+		for(i=0;i<strlen(loading);i++) {
+			if(loading[i] == '_')
+				loading[i] = ' ';
 			else
-				if(cd)
-					length += sizeof(fastloadcd)/sizeof(char);
-				else {
-					length += sizeof(autoloadcode)/sizeof(char);
-					move_len = (0x81A - 0x80C);
-				}
+				loading[i] = toupper(loading[i]);
+		}
 
-		if(fast | k8 | cd) {
-			if(length - sizeof(basic)/sizeof(char) - move_len > 384) {
-				segments[0].filename[strlen(segments[0].filename) - (length - sizeof(basic)/sizeof(char) - move_len - 384)] = '\0';
-				fprintf(stderr,"WARNING: BF00 page overflow: truncating display filename to %s\n\n",segments[0].filename);
-				length = 384 + sizeof(basic)/sizeof(char) + move_len;
-			}
-		}
-		else {
-			if(length - sizeof(basic)/sizeof(char) - move_len > 256) {
-				segments[0].filename[strlen(segments[0].filename) - (length - sizeof(basic)/sizeof(char) - move_len - 256)] = '\0';
-				fprintf(stderr,"WARNING: BF00 page overflow: truncating display filename to %s\n\n",segments[0].filename);
-				length = 256 + sizeof(basic)/sizeof(char) + move_len;
-			}
-		}
+		length = sizeof(basic)/sizeof(char) + autoloadcode_len + sizeof(table)/sizeof(char);
 
 		freq0 = 2000;
 		freq1 = 1000;
@@ -870,28 +877,15 @@ int main(int argc, char **argv)
 		table[10] = compress;
 		table[11] = warm;
 
-		if(fast)
-			for(i=0;i<sizeof(fastload9600)/sizeof(char);i++) {
-				WRITEBYTE(fastload9600[i]);
-				checksum ^= fastload9600[i];
-			}
-		else
-			if(k8)
-				for(i=0;i<sizeof(fastload8000)/sizeof(char);i++) {
-					WRITEBYTE(fastload8000[i]);
-					checksum ^= fastload8000[i];
-				}
-			else
-				if(cd)
-					for(i=0;i<sizeof(fastloadcd)/sizeof(char);i++) {
-						WRITEBYTE(fastloadcd[i]);
-						checksum ^= fastloadcd[i];
-					}
-				else
-					for(i=0;i<sizeof(autoloadcode)/sizeof(char);i++) {
-						WRITEBYTE(autoloadcode[i]);
-						checksum ^= autoloadcode[i];
-					}
+		// patch in LOADING message
+		for(i=0;i<strlen(loading)+1;i++)
+			autoloadcode[autoload_msg - 0x80C + i] = loading[i]; // | 0x80 ?
+
+		// write out autoload code
+		for(i=0;i<autoloadcode_len;i++) {
+			WRITEBYTE(autoloadcode[i]);
+			checksum ^= autoloadcode[i];
+		}
 
 		// append table
 		for(i=0;i<sizeof(table)/sizeof(char);i++) {
@@ -899,46 +893,13 @@ int main(int argc, char **argv)
 			checksum ^= table[i];
 		}
 
-		// append LOADING...
-		loading[0] = 0x0D;
-		for(i=0;i<strlen(loading);i++) {
-			byte = toupper(loading[i]) + 0x80;
-			if(loading[i] == '_')
-				byte = toupper(' ') + 0x80;
-			WRITEBYTE(byte);
-			checksum ^= byte;
-		}
-
-		// append to loader the name of the file
-		for(i=0;i<strlen(segments[0].filename);i++) {
-			byte = toupper(segments[0].filename[i]) + 0x80;
-			if(segments[0].filename[i] == '_')
-				byte = toupper(' ') + 0x80;
-			WRITEBYTE(byte);
-			checksum ^= byte;
-		}
-
-		// append to loader the ETA
-		for(i=0;i<strlen(eta);i++) {
-			byte = toupper(eta[i]) + 0x80;
-			WRITEBYTE(byte);
-			checksum ^= byte;
-		}
-
-		// append to NULL to LOADING string
-		WRITEBYTE(0x00);
-		checksum ^= 0x00;
-
 		// it's a wrap!
 		WRITEBYTE(0xff);
 		checksum ^= 0xff;
 
 		if(!basicload) {
-			int pad = (0xFF - (length & 0xFF));
-
-			if(!(fast|cd|k8))
-				pad += 0x100;
-
+			// pad all autoload objects to $200 in low mem; same load syntax
+			int pad = 0x1ff - length;
 			length += pad;
 			while(pad--)
 				WRITEBYTE(0x00);
@@ -970,7 +931,6 @@ int main(int argc, char **argv)
 		}
 
 		if(qr) {
-			char loading[]="LOADING ";
 			buf.length = 0;
 
 			// 0.25 sec
@@ -985,29 +945,13 @@ int main(int argc, char **argv)
 			}
 
 			// LOADING
-			for(i=0;i<strlen(loading);i++) {
-				byte = loading[i] + 0x80;
+			for(i=1;i<strlen(loading);i++) {
+				byte = loading[i] | 0x80;
 				WRITEBYTE(byte);
 				checksum ^= byte;
 			}
 
-			// append to loader the name of the file
-			for(i=0;i<strlen(segments[0].filename);i++) {
-				byte = toupper(segments[0].filename[i]) + 0x80;
-				if(segments[0].filename[i] == '_')
-					byte = toupper(' ') + 0x80;
-				WRITEBYTE(byte);
-				checksum ^= byte;
-			}
-
-			// append to loader the ETA
-			for(i=0;i<strlen(eta);i++) {
-				byte = toupper(eta[i]) + 0x80;
-				WRITEBYTE(byte);
-				checksum ^= byte;
-			}
-
-			for(i=0;i<60-strlen(segments[0].filename)-strlen(eta)-strlen(loading);i++) {
+			for(i=0;i<60-strlen(loading+1);i++) {
 				WRITEBYTE(0x00);
 				checksum ^= 0x00;
 			}

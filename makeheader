@@ -13,7 +13,7 @@ make clean
 PATH=../cc65-2.13.3/bin:$PATH make
 
 (
-header autoload autoloadcode 4
+header autoload autoload1333 4
 header inflate inflatecode 8
 header fastload9600 fastload9600 4
 header fastload8000 fastload8000 4

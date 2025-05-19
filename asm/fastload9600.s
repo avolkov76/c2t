@@ -2,6 +2,7 @@
 
 .include "apple2.inc"
 .include "inflate.inc"
+.include "autoload.inc"
 .include "fastload.inc"
 
 cout	=	COUT		; character out sub
@@ -30,14 +31,22 @@ move2:	lda	moved+256,x
 	sta	fast+256,x
 	inx
 	bpl	move2		; only 128 bytes to move
+
+	lda	#<loadm		; print "LOADING ..."
+	ldy	#>loadm
+	jsr	print		; in high mem
+
 	jmp	fast
+
+	; this will cause a range error if autoload_msg is incorrectly positioned
+	.res	autoload_msg-*, 0	; align to fixed start of loadm
+loadm:	
+	.asciiz	"LOADING..."		; overwritten by audio builder
+	.res	autoload_mlen-11	; reserved message space
+
 moved:
 	.org	fastload_org
 fast:
-	lda	#<loadm
-	ldy	#>loadm
-	jsr	print
-
 	lda	#$ff
 	sta	chksum
 
@@ -145,6 +154,8 @@ inf:
 
 	jsr	inflate
 
+; >>> Code above this point may be freely destroyed by inflate! <<<
+afterinf:
 	lda	inf_end		;dst end +1 lsb
 	cmp	inflate_zp+2
 	bne	error
@@ -196,8 +207,8 @@ inf_flag:
 	.org	*+1
 warm_flag:
 	.org	*+1
-loadm:	
-	;.asciiz	"LOADING "
 
 end:
 
+.assert	end <= $C000, warning, "fastload9600 object overruns I/O segment"
+.assert	inflate_data + inflate_datalen < afterinf, warning, "inflate_data segment overruns end code"

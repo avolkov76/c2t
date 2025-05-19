@@ -25,14 +25,22 @@ move1:	lda	moved,x
         sta	load,x
 	inx
 	bne	move1		; move 256 bytes
+
+	lda	#<loadm		; print "LOADING ..."
+	ldy	#>loadm
+	jsr	print		; in high mem
+
 	jmp	load
+
+	; this will cause a range error if autoload_msg is incorrectly positioned
+	.res	autoload_msg-*, 0	; align to fixed start of loadm
+loadm:	
+	.asciiz	"LOADING..."		; overwritten by audio builder
+	.res	autoload_mlen-11	; reserved message space
+
 moved:
 	.org	autoload_org
 load:
-	lda	#<loadm
-	ldy	#>loadm
-	jsr	print
-
 	lda	ld_beg
 	sta	$3C		; starting tape address low
 	lda	ld_beg+1
@@ -113,8 +121,6 @@ inf_flag:
 	.org	*+1
 warm_flag:
 	.org	*+1
-loadm:	
-	;.asciiz	"LOADING "
 
 end:
 

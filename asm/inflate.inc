@@ -9,3 +9,4 @@ autoload3_zp	= $0
 inflate		= autoload3_org
 inflate_zp	= autoload3_zp
 inflate_data	= $BC00
+inflate_datalen	= $2FC		; 764 bytes of uninitialized data
