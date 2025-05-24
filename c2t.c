@@ -643,7 +643,7 @@ int main(int argc, char **argv)
 
 	if(autoload) {
 		int eta;
-		char loading[autoload_mlen+50]; // "\rLOADING ...";
+		char loading[100]; // "\rLOADING ...";
 		size_t nameavail;
 		unsigned char byte, checksum, *cmp_data, table[12];
 		unsigned char *autoloadcode;
@@ -792,13 +792,13 @@ int main(int argc, char **argv)
 
 		eta = (int) (ones/(float)freq1 + zeros/(float)freq0 + 0.5 + 0.25 + (3.75 * ((k8|cd|fast) == 0)));
 		// calculate space available for filename
-		sprintf(loading,"\rLOADING %s, ETA %d SEC.","",eta);
+		sprintf(loading,"\rLOADING %s, ETA %d SEC. ","",eta);
 		nameavail = autoload_mlen - 1 - strlen(loading);
 		if(nameavail < strlen(segments[0].filename)) {
 			segments[0].filename[nameavail] = '\0';
 			fprintf(stderr,"WARNING: Loading message buffer overflow: truncating display filename to %s\n\n",segments[0].filename);
 		}
-		sprintf(loading,"\rLOADING %s, ETA %d SEC.",segments[0].filename,eta);
+		sprintf(loading,"\rLOADING %s, ETA %d SEC. ",segments[0].filename,eta);
 		// post-process the LOADING message
 		for(i=0;i<strlen(loading);i++) {
 			if(loading[i] == '_')
@@ -878,7 +878,7 @@ int main(int argc, char **argv)
 		table[11] = warm;
 
 		// patch in LOADING message
-		for(i=0;i<strlen(loading)+1;i++)
+		for(i=0;i<strlen(loading);i++)
 			autoloadcode[autoload_msg - 0x80C + i] = loading[i]; // | 0x80 ?
 
 		// write out autoload code
@@ -1009,7 +1009,8 @@ int main(int argc, char **argv)
 	}
 
 	if(dsk) {
-		char eta[40];
+		int eta;
+		char loading[60]; // "LOADING ...";
 		unsigned char byte, checksum=0xff, *cmp_data, start_table[21], *diskloadcode;
 		unsigned long ones=0, zeros=0, diskloadcode_len;
 		size_t cmp_len;
@@ -1074,9 +1075,17 @@ int main(int argc, char **argv)
 		freq1 = 8000;
 		if(k8)
 			freq1 = 6000;
-		sprintf(eta,"%d SEC. ",(int) (ones/(float)freq1 + zeros/(float)freq0 + 0.5 + 0.25));
 
-		//length = sizeof(basic)/sizeof(char) + sizeof(diskloadcode)/sizeof(char);
+		eta = (int) (ones/(float)freq1 + zeros/(float)freq0 + 0.5 + 0.25);
+
+		// generate the LOADING message
+		sprintf(loading,"LOADING INSTA-DISK, ETA %d SEC. ",eta);
+		if(strlen(loading)+1 > diskload1_mlen) {
+			// this should never happen, but..
+			loading[diskload1_mlen-1] = '\0';
+			fprintf(stderr,"WARNING: Loading message buffer overflow: truncating message\n\n");
+		}
+
 		length = sizeof(basic)/sizeof(char) + diskloadcode_len;
 		header[0] = length & 0xFF;
 		header[1] = length >> 8;
@@ -1105,12 +1114,11 @@ int main(int argc, char **argv)
 			checksum ^= basic[i];
 		}
 
-		// patch in ETA
-		for(i=0;i<strlen(eta);i++)
-			diskloadcode[0x84F - 0x80C + i] = eta[i] + 0x80;
+		// patch in LOADING message
+		for(i=0;i<strlen(loading);i++)
+			diskloadcode[diskload1_msg - 0x80C + i] = loading[i]; // | 0x80 ?
 
 		// write out move and load code
-		//for(i=0;i<sizeof(diskloadcode)/sizeof(char);i++) {
 		for(i=0;i<diskloadcode_len;i++) {
 			WRITEBYTE(diskloadcode[i]);
 			checksum ^= diskloadcode[i];
@@ -1142,6 +1150,7 @@ int main(int argc, char **argv)
 		// patch loadcode2 with start locations and ETA
 		for(i=0;i<numseg;i++) {
 			int k, err;
+			char eta[10];
 			double orig_len;
 			unsigned char checksum=0xff;
 			const unsigned int dataend = diskload1_org;  // cmp data loaded just below diskload1 object

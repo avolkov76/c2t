@@ -50,10 +50,13 @@ phase1:
 
 	jsr	readtape	; get the code
 	jmp	diskload2	; run it
-loadm:
-	.byte	"LOADING INSTA-DISK, ETA "
-loadsec:			; 10 bytes for "XX SEC. ",$00
-	.byte	0,0,0,0,0,0,0,0,0,0
+
+	; this will cause a range error if diskload1_msg is incorrectly positioned
+	.res	diskload1_msg-*, 0	; align to fixed start of loadm
+loadm:	
+	.asciiz	"LOADING..."		; overwritten by audio builder
+	.res	diskload1_mlen-11, 0	; reserved message space
+
 moved:
 	.org	diskload1_org	; $9000 for now
 readtape:

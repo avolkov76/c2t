@@ -36,7 +36,7 @@ move1:	lda	moved,x
 	.res	autoload_msg-*, 0	; align to fixed start of loadm
 loadm:	
 	.asciiz	"LOADING..."		; overwritten by audio builder
-	.res	autoload_mlen-11	; reserved message space
+	.res	autoload_mlen-11, 0	; reserved message space
 
 moved:
 	.org	autoload_org
