@@ -92,17 +92,6 @@ Bugs:
 #define WAVE 3
 #define DSK 4 
 
-#define WRITEBYTE(x) { \
-	unsigned char wb_j, wb_temp=(x); \
-	for(wb_j=0;wb_j<8;wb_j++) { \
-		if(wb_temp & 0x80) \
-			appendtone(&buf,freq1,0,1); \
-		else \
-			appendtone(&buf,freq0,0,1); \
-		wb_temp<<=1; \
-	} \
-}
-
 typedef struct outbuf {
 	double *sound;
 	long length;
@@ -155,6 +144,135 @@ typedef struct d {
 	track tracks[35];
 } disk;
 
+typedef struct tapegen tapegen;
+struct tapegen {
+	const char *const name;	// descriptive name
+	const int bps;		// avg bits/second
+	const int samp_rate;	// audio sampling rate required
+
+	// all function pointers must be set
+	void (* init_checksum)(tapegen *);
+	void (* checksum_byte)(tapegen *, unsigned char b);
+	double (* compute_length)(tapegen *, unsigned char *data, size_t datalen); // in seconds
+	void (* write_preamble)(tapegen *, outbuf *buf, double extra /*seconds*/);
+	void (* write_start)(tapegen *, outbuf *buf);
+	void (* write_stop)(tapegen *, outbuf *buf);
+	void (* write_byte)(tapegen *, outbuf *buf, unsigned char b);
+	void (* write_checksum)(tapegen *, outbuf *buf);
+	void (* write_filler)(tapegen *, outbuf *buf, double time /*seconds*/);
+
+	// the following may or may not be set
+	const double pre_len;	// standard preamble length in seconds
+	const int freq_pre;	// preamble frequency used
+	const int freq_end;	// ending frequency used
+	const int freq_fill;	// filler frequency used (waits)
+	const int freq0;	// frequency of bit 0 (FM coding)
+	const int freq1;	// frequency of bit 1 (FM coding)
+
+	unsigned char checksum;	// current running checksum
+};
+
+void gen_write_checked_byte(tapegen *gen, outbuf *buf, unsigned char b);
+void gen_write_block(tapegen *gen, outbuf *buf, unsigned char *data, size_t datalen);
+void gen_checksum_block(tapegen *gen, unsigned char *data, size_t datalen);
+
+void gen_init_checksum(tapegen *gen);
+void gen_checksum_byte(tapegen *gen, unsigned char b);
+double fmgen_compute_length(tapegen *gen, unsigned char *data, size_t datalen);
+void gen_write_preamble(tapegen *gen, outbuf *buf, double extra);
+void null_write_start(tapegen *gen, outbuf *buf);
+void a1tape_write_start(tapegen *gen, outbuf *buf);
+void a2tape_write_start(tapegen *gen, outbuf *buf);
+void fmgen_write_stop(tapegen *gen, outbuf *buf);
+void a1tape_write_stop(tapegen *gen, outbuf *buf);
+void fmgen_write_byte(tapegen *gen, outbuf *buf, unsigned char b);
+void gen_write_checksum(tapegen *gen, outbuf *buf);
+void null_write_checksum(tapegen *gen, outbuf *buf);
+void gen_write_filler(tapegen *gen, outbuf *buf, double time);
+
+tapegen a1tape = {
+	"Apple Tape",
+	1333 /*bps*/, 8000 /*sampling rate*/,
+	gen_init_checksum, gen_checksum_byte,
+	fmgen_compute_length, gen_write_preamble,
+	a1tape_write_start, a1tape_write_stop,
+	fmgen_write_byte, null_write_checksum,
+	gen_write_filler,
+	4.0 /*pre_len*/, 1000 /*pre*/,
+	1000 /*end*/, 1000 /*fill*/,
+	2000 /*freq0*/, 1000 /*freq1*/,
+};
+
+tapegen a2tape = {
+	"Apple II Tape",
+	1333 /*bps*/, 11025 /*sampling rate*/,
+	gen_init_checksum, gen_checksum_byte,
+	fmgen_compute_length, gen_write_preamble,
+	a2tape_write_start, a1tape_write_stop,
+	fmgen_write_byte, gen_write_checksum,
+	gen_write_filler,
+	4.0 /*pre_len*/, 770 /*pre*/,
+	1000 /*end*/, 770 /*fill*/,
+	2000 /*freq0*/, 1000 /*freq1*/,
+};
+
+// Symmetric FM 8000 bps coding; using fastload8000
+tapegen sfm8000aud = {
+	"SFM-8000",
+	8000 /*bps*/, 48000 /*sampling rate*/,
+	gen_init_checksum, gen_checksum_byte,
+	fmgen_compute_length, gen_write_preamble,
+	null_write_start, fmgen_write_stop,
+	fmgen_write_byte, gen_write_checksum,
+	gen_write_filler,
+	0.25 /*pre_len*/, 2000 /*pre*/,
+	770 /*end*/, 2000 /*fill*/,
+	12000 /*freq0*/, 6000 /*freq1*/,
+};
+
+void afm9600_write_byte(tapegen *gen, outbuf *buf, unsigned char b);
+// Asymmetric FM 9600 bps coding (formerly 9600-hack); using fastload8000
+tapegen afm9600aud = {
+	"AFM-9600",
+	9600 /*bps*/, 48000 /*sampling rate*/,
+	gen_init_checksum, gen_checksum_byte,
+	fmgen_compute_length, gen_write_preamble,
+	null_write_start, fmgen_write_stop,
+	afm9600_write_byte, gen_write_checksum,
+	gen_write_filler,
+	0.25 /*pre_len*/, 2000 /*pre*/,
+	770 /*end*/, 2000 /*fill*/,
+	12000 /*freq0*/, 8000 /*freq1*/,
+};
+
+// Symmetric FM 9600 bps coding; using fastload9600
+tapegen sfm9600aud = {
+	"SFM-9600",
+	9600 /*bps*/, 48000 /*sampling rate*/,
+	gen_init_checksum, gen_checksum_byte,
+	fmgen_compute_length, gen_write_preamble,
+	null_write_start, fmgen_write_stop,
+	fmgen_write_byte, gen_write_checksum,
+	gen_write_filler,
+	0.25 /*pre_len*/, 6000 /*pre*/,
+	2000 /*end*/, 6000 /*fill*/,
+	12000 /*freq0*/, 8000 /*freq1*/,
+};
+
+// Symmetric FM 8820 bps coding; using fastloadcd
+tapegen cd8820aud = {
+	"SFM/CD-8820",
+	8820 /*bps*/, 44100 /*sampling rate*/,
+	gen_init_checksum, gen_checksum_byte,
+	fmgen_compute_length, gen_write_preamble,
+	null_write_start, fmgen_write_stop,
+	fmgen_write_byte, gen_write_checksum,
+	gen_write_filler,
+	0.25 /*pre_len*/, 5512 /*pre*/,
+	2000 /*end*/, 5512 /*fill*/,
+	11025 /*freq0*/, 7350 /*freq1*/,
+};
+
 int square = 0;
 
 int main(int argc, char **argv)
@@ -163,7 +281,7 @@ int main(int argc, char **argv)
 	outbuf buf;
 	double amp=0.75;
 	int i, c, model=0, outputtype, fileoutput=1, warm=0, dsk=0, noformat=0, k8=0, qr=0;
-	int autoload=0, basicload=0, compress=0, fast=0, cd=0, tape=0, endpage=0, longmon=0, rate=11025, bits=8, freq0=2000, freq1=1000, freq_pre=770, freq_end=770;
+	int autoload=0, basicload=0, compress=0, fast=0, cd=0, tape=0, endpage=0, longmon=0, rate=11025, bits=8;
 	char *filetypes[] = {"binary","monitor","aiff","wave","disk"};
 	char *modeltypes[] = {"\b","I","II"};
 	char *ext;
@@ -198,13 +316,11 @@ int main(int argc, char **argv)
 				autoload = compress = 1;
 				break;
 			case 'f':		// hifreq
-				rate = 48000;
 				model = 2;
 				autoload = fast = 1;
 				cd = k8 = 0;
 				break;
 			case 'd':		// hifreq CD
-				rate = 44100;
 				bits = 16;
 				amp = 1.0;
 				model = 2;
@@ -228,7 +344,6 @@ int main(int argc, char **argv)
 				noformat = 1;
 				break;
 			case '8':		// 8k
-				rate = 48000;
 				model = 2;
 				autoload = k8 = 1;
 				fast = cd = 0;
@@ -238,7 +353,6 @@ int main(int argc, char **argv)
 				usage();
 				return 1;
 			case 'q':		// qr code support
-				rate = 48000;
 				model = 2;
 				autoload = k8 = qr = 1;
 				fast = cd = 0;
@@ -579,30 +693,24 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	if(dsk)
-		rate = 48000;
-	outbuf_init(&buf, rate);
-
 	// write out code
 	if(!autoload  && !dsk) {
-		int i, j;
-		//unsigned long cmp_len;
+		int i;
 		size_t cmp_len;
 		unsigned char *cmp_data;
-		char checksum;
+		tapegen *gen;
+
+		if(model == 1)
+			gen = &a1tape;
+		else /* model == 2 */
+			gen = &a2tape;
+
+		outbuf_init(&buf, rate);
 
 		for(i=0;i<numseg;i++) {
-			// header
-			if(model == 1) {
-				appendtone(&buf,1000,4.0+tape,0);
-				appendtone(&buf,2000,0,1);
-			}
-			else {
-				appendtone(&buf,770,4.0+tape,0);
-				appendtone(&buf,2500,0,0.5);
-				appendtone(&buf,2000,0,0.5);
-			}
-			checksum = 0xff;
+			gen->write_preamble(gen, &buf, tape);
+			gen->write_start(gen, &buf);
+			gen->init_checksum(gen);
 
 			if(compress) {
 				cmp_data = tdefl_compress_mem_to_heap(segments[i].data, segments[i].length, &cmp_len, TDEFL_MAX_PROBES_MASK);
@@ -610,15 +718,12 @@ int main(int argc, char **argv)
 				segments[i].data = cmp_data;
 				segments[i].length = cmp_len;
 			}
-			for(j=0;j<segments[i].length;j++) {
-				WRITEBYTE(segments[i].data[j]);
-				checksum ^= segments[i].data[j];
-			}
-	
+
+			gen_write_block(gen, &buf, segments[i].data, segments[i].length);
+			
 			// checksum/endbits
-			if(model == 2)
-				WRITEBYTE(checksum);
-			appendtone(&buf,1000,0,1);
+			gen->write_checksum(gen, &buf);
+			gen->write_stop(gen, &buf);
 		}
 
 		// friendly help
@@ -642,114 +747,73 @@ int main(int argc, char **argv)
 	}
 
 	if(autoload) {
-		int eta;
+		double eta = 0;
 		char loading[100]; // "\rLOADING ...";
 		size_t nameavail;
-		unsigned char byte, checksum, *cmp_data, table[12];
+		unsigned char *cmp_data, table[12];
 		unsigned char *autoloadcode;
 		size_t autoloadcode_len;
-		unsigned long ones=0, zeros=0;
 		size_t cmp_len;
 		unsigned int length;
 		int i, j;
+		tapegen *gen, *basgen = &a2tape;
 
-		if(fast) {
+		if(fast && 0 /*disabled*/) {
+			// symmetric 9600 variant; unstable
 			autoloadcode = fastload9600;
 			autoloadcode_len = sizeof(fastload9600)/sizeof(char);
+			gen = &sfm9600aud;
+		}
+		else if(fast) {
+			// asymmetric 9600 variant; not entirely stable
+			autoloadcode = fastload8000;
+			autoloadcode_len = sizeof(fastload8000)/sizeof(char);
+			gen = &afm9600aud;
+			square = 1;
 		}
 		else if(k8) {
 			autoloadcode = fastload8000;
 			autoloadcode_len = sizeof(fastload8000)/sizeof(char);
+			gen = &sfm8000aud;
 		}
 		else if(cd) {
 			autoloadcode = fastloadcd;
 			autoloadcode_len = sizeof(fastloadcd)/sizeof(char);
+			gen = &cd8820aud;
 		}
 		else /* 1333 autoload */ {
 			autoloadcode = autoload1333;
 			autoloadcode_len = sizeof(autoload1333)/sizeof(char);
+			gen = &a2tape;
 		}
 
-		appendtone(&buf,770,4.0+tape,0);
-		appendtone(&buf,2500,0,0.5);
-		appendtone(&buf,2000,0,0.5);
+		outbuf_init(&buf, gen->samp_rate);
 
 		// compute uncompressed ETA
-		for(j=0;j<segments[0].length;j++) {
-			byte=segments[0].data[j];
-			for(i=0;i<8;i++) {
-				if(byte & 0x80)
-					ones++;
-				else
-					zeros++;
-				byte <<= 1;
-			}
-		}
-
-		if(fast) {
-			freq0 = 12000;
-			freq1 = 8000;
-			freq_pre = 6000;
-			freq_end = 2000;
-		}
-		if(k8) {
-			freq0 = 12000;
-			freq1 = 6000;
-			freq_pre = 2000;
-			freq_end = 770;
-		}
-		if(cd) {
-			freq0 = 11025;
-			freq1 = 7350;
-			freq_pre = 5512;
-			freq_end = 2000;
-		}
+		eta = gen->compute_length(gen, segments[0].data, segments[0].length);
 
 		if(compress) {
-			unsigned long cmp_ones=0, cmp_zeros=0;
+			double cmp_eta = 0;
 			double inflate_time = 0;
 			const unsigned int simaddr = 0xBF00;
 
 			cmp_data = tdefl_compress_mem_to_heap(segments[0].data, segments[0].length, &cmp_len, TDEFL_MAX_PROBES_MASK);
 
-			for(j=0;j<cmp_len;j++) {
-				byte=cmp_data[j];
-				for(i=0;i<8;i++) {
-					if(byte & 0x80)
-						cmp_ones++;
-					else
-						cmp_zeros++;
-					byte <<= 1;
-				}
-			}
-
+			cmp_eta = gen->compute_length(gen, cmp_data, cmp_len);
 			// we need to append inflate/decompress code to end of data
-			for(j=0;j<sizeof(inflatecode)/sizeof(char);j++) {
-				byte=inflatecode[j];
-				for(i=0;i<8;i++) {
-					if(byte & 0x80)
-						cmp_ones++;
-					else
-						cmp_zeros++;
-					byte <<= 1;
-				}
-			}
+			cmp_eta += gen->compute_length(gen, inflatecode, sizeof(inflatecode)/sizeof(char));
 
 			//compute inflate time
 			const unsigned int dataorg = autoload3_org - cmp_len;
-
 			//load up inflate data
-			checksum = 0xff;
-			for(j=0;j<cmp_len;j++) {
-				ram[dataorg + j] = cmp_data[j];
-				checksum ^= cmp_data[j];
-			}
+			gen->init_checksum(gen);
+			memcpy(ram + dataorg, cmp_data, cmp_len*sizeof(char));
+			gen_checksum_block(gen, cmp_data, cmp_len);
 			//load up inflate code
-			for(j=0;j<sizeof(inflatecode)/sizeof(char);j++) {
-				ram[autoload3_org + j] = inflatecode[j];
-				checksum ^= inflatecode[j];
-			}
-			ram[autoload3_org + j] = checksum;
+			memcpy(ram + autoload3_org, inflatecode, sizeof(inflatecode));
+			gen_checksum_block(gen, inflatecode, sizeof(inflatecode)/sizeof(char));
+			// append checksum to loaded data and code
+			ram[autoload3_org + sizeof(inflatecode)/sizeof(char)] = gen->checksum;
 
 			//zero page src
 			ram[autoload3_zp + 0] = dataorg & 0xFF;
@@ -773,10 +837,10 @@ int main(int argc, char **argv)
 				}
 			inflate_time += clockticks6502/1023000.0;
 
-			fprintf(stderr,"start: 0x%04X, length: %5d, deflated: %.02f%%, data time:%.02f, inflate time:%.02f\n",dataorg,(unsigned int)cmp_len,100.0*(1-cmp_len/(float)segments[0].length),cmp_ones/(float)freq1 + cmp_zeros/(float)freq0,inflate_time);
+			fprintf(stderr,"start: 0x%04X, length: %5d, deflated: %.02f%%, data time:%.02f, inflate time:%.02f\n",dataorg,(unsigned int)cmp_len,100.0*(1-cmp_len/(float)segments[0].length),cmp_eta,inflate_time);
 
-			if((ones/(float)freq1 + zeros/(float)freq0) < inflate_time + (cmp_ones/(float)freq1 + cmp_zeros/(float)freq0)) {
-				fprintf(stderr,"WARNING: compression disabled: no significant gain (%.02f)\n",ones/(float)freq1 + zeros/(float)freq0);
+			if(eta < inflate_time + cmp_eta) {
+				fprintf(stderr,"WARNING: compression disabled: no significant gain (%.02f)\n",eta);
 				compress = 0;
 			}
 			else {
@@ -784,21 +848,20 @@ int main(int argc, char **argv)
 				segments[0].data = cmp_data;
 				segments[0].codelength = segments[0].length;
 				segments[0].length = cmp_len;
-				ones=cmp_ones;
-				zeros=cmp_zeros;
+				eta = cmp_eta;
 			}
 			fprintf(stderr,"\n");
 		}
 
-		eta = (int) (ones/(float)freq1 + zeros/(float)freq0 + 0.5 + 0.25 + (3.75 * ((k8|cd|fast) == 0)));
+		eta += gen->pre_len;
 		// calculate space available for filename
-		sprintf(loading,"\rLOADING %s, ETA %d SEC. ","",eta);
+		sprintf(loading,"\rLOADING %s, ETA %d SEC. ","",(int)(eta+0.5));
 		nameavail = autoload_mlen - 1 - strlen(loading);
 		if(nameavail < strlen(segments[0].filename)) {
 			segments[0].filename[nameavail] = '\0';
 			fprintf(stderr,"WARNING: Loading message buffer overflow: truncating display filename to %s\n\n",segments[0].filename);
 		}
-		sprintf(loading,"\rLOADING %s, ETA %d SEC. ",segments[0].filename,eta);
+		sprintf(loading,"\rLOADING %s, ETA %d SEC. ",segments[0].filename,(int)(eta+0.5));
 		// post-process the LOADING message
 		for(i=0;i<strlen(loading);i++) {
 			if(loading[i] == '_')
@@ -809,37 +872,29 @@ int main(int argc, char **argv)
 
 		length = sizeof(basic)/sizeof(char) + autoloadcode_len + sizeof(table)/sizeof(char);
 
-		freq0 = 2000;
-		freq1 = 1000;
-		checksum = 0xff;
+		// write out the bootstrap code, BASIC or asm
+		basgen->write_preamble(basgen, &buf, tape);
+		basgen->write_start(basgen, &buf);
+		basgen->init_checksum(basgen);
 
 		if(basicload) { // write basic stub
+			// first the standard header
 			header[0] = length & 0xFF;
 			header[1] = length >> 8;
-			for(i=0;i<3;i++) {
-				WRITEBYTE(header[i]);
-				checksum ^= header[i];
-			}
-			WRITEBYTE(checksum);
+			gen_write_block(basgen, &buf, header, 3);
+			basgen->write_checksum(basgen, &buf);
+			basgen->write_stop(basgen, &buf);
 
-			appendtone(&buf,1000,0,1);
-			appendtone(&buf,770,4.0,0);
-			appendtone(&buf,2500,0,0.5);
-			appendtone(&buf,2000,0,0.5);
-
-			// write out basic program
-			checksum = 0xff;
-			for(i=0;i<sizeof(basic)/sizeof(char);i++) {
-				WRITEBYTE(basic[i]);
-				checksum ^= basic[i];
-			}
+			// write out basic program (needs another preamble+start sequence)
+			basgen->write_preamble(basgen, &buf, 0);
+			basgen->write_start(basgen, &buf);
+			basgen->init_checksum(basgen);
+			gen_write_block(basgen, &buf, basic, sizeof(basic)/sizeof(char));
 		}
 		else { // write out JMP 80C NOP NOP ...
 			unsigned char patch[] = {0x4C,0x0C,0x08,0xEA,0xEA,0xEA,0xEA,0xEA,0xEA,0xEA,0xEA,0xEA};
-			for(i=0;i<sizeof(patch)/sizeof(char);i++) {
-				WRITEBYTE(patch[i]);
-				checksum ^= patch[i];
-			}
+			// no header for an asm load
+			gen_write_block(basgen, &buf, patch, sizeof(patch)/sizeof(char));
 		}
 
 		// write out move and load code
@@ -882,115 +937,73 @@ int main(int argc, char **argv)
 			autoloadcode[autoload_msg - 0x80C + i] = loading[i]; // | 0x80 ?
 
 		// write out autoload code
-		for(i=0;i<autoloadcode_len;i++) {
-			WRITEBYTE(autoloadcode[i]);
-			checksum ^= autoloadcode[i];
-		}
-
+		gen_write_block(basgen, &buf, autoloadcode, autoloadcode_len);
 		// append table
-		for(i=0;i<sizeof(table)/sizeof(char);i++) {
-			WRITEBYTE(table[i]);
-			checksum ^= table[i];
-		}
-
+		gen_write_block(basgen, &buf, table, sizeof(table)/sizeof(char));
 		// it's a wrap!
-		WRITEBYTE(0xff);
-		checksum ^= 0xff;
+		gen_write_checked_byte(basgen, &buf, 0xff);
 
 		if(!basicload) {
 			// pad all autoload objects to $200 in low mem; same load syntax
 			int pad = 0x1ff - length;
 			length += pad;
 			while(pad--)
-				WRITEBYTE(0x00);
+				gen_write_checked_byte(basgen, &buf, 0x00);
 		}
 
-		WRITEBYTE(checksum);
-
-		appendtone(&buf,1000,0,1);
-		if(fast || cd || k8)
-			appendtone(&buf,freq_pre,0.25,0);
-		else {
-			appendtone(&buf,770,4.0,0);
-			appendtone(&buf,2500,0,0.5);
-			appendtone(&buf,2000,0,0.5);
-		}
-
-		// now the code
-		if(fast) {
-			freq0 = 12000;
-			freq1 = 8000;
-		}
-		if(cd) {
-			freq0 = 11025;
-			freq1 = 7350;
-		}
-		if(k8) {
-			freq0 = 12000;
-			freq1 = 6000;
-		}
+		basgen->write_checksum(basgen, &buf);
+		basgen->write_stop(basgen, &buf);
 
 		if(qr) {
+			// (!) Full reset: remove all audio so far (bootstrapper, etc.) and start anew
 			buf.length = 0;
 
 			// 0.25 sec
-			appendtone(&buf,freq_pre,0.25,0);
-
-			checksum = 0xff;
+			gen->write_preamble(gen, &buf, 0);
+			gen->write_start(gen, &buf);
+			gen->init_checksum(gen);
 
 			// parameters, 12 bytes
-			for(i=0;i<sizeof(table)/sizeof(char);i++) {
-				WRITEBYTE(table[i]);
-				checksum ^= table[i];
-			}
+			gen_write_block(gen, &buf, table, sizeof(table)/sizeof(char));
 
-			// LOADING
+			// LOADING message
 			for(i=1;i<strlen(loading);i++) {
-				byte = loading[i] | 0x80;
-				WRITEBYTE(byte);
-				checksum ^= byte;
+				// XXX: Is $80 char flag necessary?
+				gen_write_checked_byte(gen, &buf, loading[i] | 0x80);
 			}
 
 			for(i=0;i<60-strlen(loading+1);i++) {
-				WRITEBYTE(0x00);
-				checksum ^= 0x00;
+				gen_write_checked_byte(gen, &buf, 0x00);
 			}
 
-			WRITEBYTE(checksum);
-
+			gen->write_checksum(gen, &buf);
 			// end of parameters
-			appendtone(&buf,freq_end,0,2);
+			gen->write_stop(gen, &buf);
 
-			// time to processes
-			appendtone(&buf,freq_pre,0.25,0);
+			// time is needed to process the params; the next preamble takes care of that
 		}
 
-		checksum = 0xff;
-		for(j=0;j<segments[0].length;j++) {
-			WRITEBYTE(segments[0].data[j]);
-			checksum ^= segments[0].data[j];
-		}
+		// now the code
+		gen->write_preamble(gen, &buf, 0);
+		gen->write_start(gen, &buf);
+		gen->init_checksum(gen);
+
+		gen_write_block(gen, &buf, segments[0].data, segments[0].length);
 
 		if(compress) {
-			for(j=0;j<sizeof(inflatecode)/sizeof(char);j++) {
-				WRITEBYTE(inflatecode[j]);
-				checksum ^= inflatecode[j];
-			}
+			// need the inflate code to decompress data
+			gen_write_block(gen, &buf, inflatecode, sizeof(inflatecode)/sizeof(char));
 		}
 
+		// XXX: ???
 		if(fast + cd + k8 == 0) {	// hack so that standard method matches others
-			WRITEBYTE(0x00);
-			WRITEBYTE(0x00);
+			gen_write_checked_byte(gen, &buf, 0x00);
+			gen_write_checked_byte(gen, &buf, 0x00);
 		}
 
-		WRITEBYTE(checksum);
-
-		if(fast || cd || k8)
-			//appendtone(&buf,freq_end,0,1);
-			appendtone(&buf,freq_end,0,10);
-		else
-			//appendtone(&buf,1000,0,1);
-			appendtone(&buf,1000,0,10);
+		gen->write_checksum(gen, &buf);
+		gen->write_stop(gen, &buf);
+		gen->write_filler(gen, &buf, 0.01);
 
 		if(!qr) {
 			if(basicload) {
@@ -1009,150 +1022,103 @@ int main(int argc, char **argv)
 	}
 
 	if(dsk) {
-		int eta;
+		double eta=0;
 		char loading[60]; // "LOADING ...";
-		unsigned char byte, checksum=0xff, *cmp_data, start_table[21], *diskloadcode;
-		unsigned long ones=0, zeros=0, diskloadcode_len;
+		unsigned char *cmp_data, start_table[21], *diskloadcode;
+		unsigned long diskloadcode_len;
 		size_t cmp_len;
 		unsigned int length, start_table_len = 0;
 		int i, j;
+		tapegen *gen, *basgen = &a2tape;
 		double inflate_times[5];
 		double total_data_time = 0, total_inflate_time = 0;
 
 		if(k8) {
 			diskloadcode = diskload8000;
 			diskloadcode_len = sizeof(diskload8000)/sizeof(char);
+			gen = &sfm8000aud;
 		}
-		else {
+		else if(0 /*disabled*/) {
+			// symmetric 9600 variant; unstable
 			diskloadcode = diskload9600;
 			diskloadcode_len = sizeof(diskload9600)/sizeof(char);
+			gen = &sfm9600aud;
+		}
+		else {	// default
+			// asymmetric 9600 variant; not entirely stable
+			diskloadcode = diskload8000;
+			diskloadcode_len = sizeof(diskload8000)/sizeof(char);
+			gen = &afm9600aud;
+			square = 1;
 		}
 
-		registerevent(events,buf.length,"770Hz Preamble + Sync Bit");
+		outbuf_init(&buf, gen->samp_rate);
 
-		appendtone(&buf,770,4.0+tape,0);
-		appendtone(&buf,2500,0,0.5);
-		appendtone(&buf,2000,0,0.5);
-
-		for(j=0;j<sizeof(diskloadcode2)/sizeof(char);j++) {
-			byte=diskloadcode2[j];
-			for(i=0;i<8;i++) {
-				if(byte & 0x80)
-					ones++;
-				else
-					zeros++;
-				byte <<= 1;
-			}
-		}
-
+		// compute ETA
+		eta = gen->compute_length(gen, diskloadcode2, sizeof(diskloadcode2)/sizeof(char));
 		// compute pad length; pad to end of last page
-		// XXX: This ignores the trailing infdata table appended later; not a problem for time estimates
-		zeros += 8*(((sizeof(diskloadcode2)/sizeof(char) + 0xFF) & 0xFF00) - sizeof(diskloadcode2)/sizeof(char));
-
-		for(j=0;j<sizeof(diskloadcode3)/sizeof(char);j++) {
-			byte=diskloadcode3[j];
-			for(i=0;i<8;i++) {
-				if(byte & 0x80)
-					ones++;
-				else
-					zeros++;
-				byte <<= 1;
-			}
-		}
-
-		for(j=0;j<sizeof(dosrwts)/sizeof(char);j++) {
-			byte=dosrwts[j];
-			for(i=0;i<8;i++) {
-				if(byte & 0x80)
-					ones++;
-				else
-					zeros++;
-				byte <<= 1;
-			}
-		}
-
-		freq0 = 12000;
-		freq1 = 8000;
-		if(k8)
-			freq1 = 6000;
-
-		eta = (int) (ones/(float)freq1 + zeros/(float)freq0 + 0.5 + 0.25);
+		// XXX: The trailing infdata table is not ready yet. Just use random diskload bits -- good enough for time estimates
+		eta += gen->compute_length(gen, diskloadcode2, ((sizeof(diskloadcode2)/sizeof(char) + 0xFF) & 0xFF00) - sizeof(diskloadcode2)/sizeof(char));
+		eta += gen->compute_length(gen, diskloadcode3, sizeof(diskloadcode3)/sizeof(char));
+		eta += gen->compute_length(gen, dosrwts, sizeof(dosrwts)/sizeof(char));
+		eta += gen->pre_len;
 
 		// generate the LOADING message
-		sprintf(loading,"LOADING INSTA-DISK, ETA %d SEC. ",eta);
+		sprintf(loading,"LOADING INSTA-DISK, ETA %d SEC. ",(int)(eta+0.5));
 		if(strlen(loading)+1 > diskload1_mlen) {
 			// this should never happen, but..
 			loading[diskload1_mlen-1] = '\0';
 			fprintf(stderr,"WARNING: Loading message buffer overflow: truncating message\n\n");
 		}
 
+		// write out BASIC stub header
+		registerevent(events,buf.length,"770Hz Preamble + Sync Bit");
+
+		basgen->write_preamble(basgen, &buf, tape);
+		basgen->write_start(basgen, &buf);
+		basgen->init_checksum(basgen);
+
 		length = sizeof(basic)/sizeof(char) + diskloadcode_len;
 		header[0] = length & 0xFF;
 		header[1] = length >> 8;
 
-		freq0 = 2000;
-		freq1 = 1000;
-		for(i=0;i<3;i++) {
-			WRITEBYTE(header[i]);
-			checksum ^= header[i];
-		}
-		WRITEBYTE(checksum);
-
 		registerevent(events,buf.length,"BASIC Header + 770Hz Preamble");
 
-		appendtone(&buf,1000,0,1);
-		appendtone(&buf,770,4.0,0);
-		appendtone(&buf,2500,0,0.5);
-		appendtone(&buf,2000,0,0.5);
+		gen_write_block(basgen, &buf, header, 3);
+		basgen->write_checksum(basgen, &buf);
+		basgen->write_stop(basgen, &buf);
+
+		// actual BASIC stub and diskload asm code
+		basgen->write_preamble(basgen, &buf, 0);
+		basgen->write_start(basgen, &buf);
+		basgen->init_checksum(basgen);
 
 		registerevent(events,buf.length,"BASIC Stub/Assembly Code @ 1333 BPS");
 
 		// write out basic program
-		checksum = 0xff;
-		for(i=0;i<sizeof(basic)/sizeof(char);i++) {
-			WRITEBYTE(basic[i]);
-			checksum ^= basic[i];
-		}
+		gen_write_block(basgen, &buf, basic, sizeof(basic)/sizeof(char));
 
 		// patch in LOADING message
 		for(i=0;i<strlen(loading);i++)
 			diskloadcode[diskload1_msg - 0x80C + i] = loading[i]; // | 0x80 ?
 
 		// write out move and load code
-		for(i=0;i<diskloadcode_len;i++) {
-			WRITEBYTE(diskloadcode[i]);
-			checksum ^= diskloadcode[i];
-		}
+		gen_write_block(basgen, &buf, diskloadcode, diskloadcode_len);
 
 		// end of basic and diskloadcode
-		WRITEBYTE(0xff);
-		checksum ^= 0xff;
-
-		WRITEBYTE(checksum);
+		gen_write_checked_byte(basgen, &buf, 0xff);
+		basgen->write_checksum(basgen, &buf);
+		basgen->write_stop(basgen, &buf);
 
 		registerevent(events,buf.length,"INSTA-DISK Code + DOS Load @ 8000 BPS");
-
-		appendtone(&buf,1000,0,1);
-		freq0 = 12000;
-		if(k8) {
-			freq1 = 6000;
-			appendtone(&buf,2000,0.25,0);
-		}
-		else {
-			freq1 = 8000;
-			appendtone(&buf,6000,0.25,0);
-		}
-
-		// reset checksum for stage 2
-		checksum = 0xff;
 
 		// time to compress and compute start location and length
 		// patch loadcode2 with start locations and ETA
 		for(i=0;i<numseg;i++) {
-			int k, err;
+			int err;
+			double cmp_eta = 0;
 			char eta[10];
 			double orig_len;
-			unsigned char checksum=0xff;
 			const unsigned int dataend = diskload1_org;  // cmp data loaded just below diskload1 object
 			const unsigned int datachkaddr = dataend - 1; // loaded chksum location
 
@@ -1160,17 +1126,14 @@ int main(int argc, char **argv)
 			
 			cmp_data = tdefl_compress_mem_to_heap(segments[i].data, segments[i].length, &cmp_len, TDEFL_MAX_PROBES_MASK);
 
+			gen->init_checksum(gen);
 			//compute inflate time
 			const unsigned int dataorg = datachkaddr - cmp_len;
-			//load up inflate code
-			for(j=0;j<sizeof(diskloadcode3)/sizeof(char);j++)
-				ram[diskload3_org + j] = diskloadcode3[j];
+			memcpy(ram + diskload3_org, diskloadcode3, sizeof(diskloadcode3));
 			//load up inflate data
-			for(j=0;j<cmp_len;j++) {
-				ram[dataorg + j] = cmp_data[j];
-				checksum ^= cmp_data[j];
-			}
-			ram[dataorg + j] = checksum;
+			memcpy(ram + dataorg, cmp_data, cmp_len*sizeof(char));
+			gen_checksum_block(gen, cmp_data, cmp_len);
+			ram[dataorg + cmp_len] = gen->checksum;
 
 			//zero page src
 			ram[diskload3_zp + 0] = dataorg & 0xFF;
@@ -1212,18 +1175,10 @@ int main(int argc, char **argv)
 			start_table[start_table_len++] = segments[i].start & 0xFF;
 			start_table[start_table_len++] = segments[i].start >> 8;
 
-			ones = zeros = 0;
-			for(j=0;j<segments[i].length;j++) {
-				byte=segments[i].data[j];
-				for(k=0;k<8;k++) {
-					if(byte & 0x80)
-						ones++;
-					else
-						zeros++;
-					byte <<= 1;
-				}
-			}
-			sprintf(eta,"%d",(int) (ones/(float)freq1 + zeros/(float)freq0 + 0.5 + 0.25));
+			// compressed data ETA
+			cmp_eta = gen->compute_length(gen, segments[i].data, segments[i].length);
+			cmp_eta += gen->pre_len;
+			sprintf(eta,"%d",(int)(cmp_eta+0.5));
 
 			// ETA
 			start_table[start_table_len++] = eta[0] + 0x80;
@@ -1232,55 +1187,36 @@ int main(int argc, char **argv)
 			else
 				start_table[start_table_len++] = 0;
 
-			//fprintf(stderr,"Segment: %d, start: 0x%04X, length: %5d, deflated: %.02f%%, data time: %s, inflate time:%.02f\n",i,segments[i].start,segments[i].length,100.0*(1-segments[i].length/orig_len),eta,inflate_times[i]);
-			fprintf(stderr,"Segment: %d, start: 0x%04X, length: %5d, deflated: %.02f%%, data time: %5.02f, inflate time: %5.02f\n",i,segments[i].start,segments[i].length,100.0*(1-segments[i].length/orig_len),(ones/(float)freq1 + zeros/(float)freq0 + 0.25),inflate_times[i]);
-			total_data_time += (ones/(float)freq1 + zeros/(float)freq0 + 0.25);
+			fprintf(stderr,"Segment: %d, start: 0x%04X, length: %5d, deflated: %.02f%%, data time: %5.02f, inflate time: %5.02f\n",i,segments[i].start,segments[i].length,100.0*(1-segments[i].length/orig_len),cmp_eta,inflate_times[i]);
+			total_data_time += cmp_eta;
 			total_inflate_time += inflate_times[i];
 		}
 		fprintf(stderr,"\n");
 
-		for(i=0;i<sizeof(diskloadcode2)/sizeof(char);i++) {
-			WRITEBYTE(diskloadcode2[i]);
-			checksum ^= diskloadcode2[i];
-		}
+		// now the stage 2 code: INSTA-DISK, inflate and DOS
+		gen->write_preamble(gen, &buf, 0);
+		gen->write_start(gen, &buf);
+		gen->init_checksum(gen);
+
+		gen_write_block(gen, &buf, diskloadcode2, sizeof(diskloadcode2)/sizeof(char));
 
 		start_table[start_table_len++] = noformat;
-
-		for(i=0;i<start_table_len;i++) {
-			WRITEBYTE(start_table[i]);
-			checksum ^= start_table[i];
-		}
+		gen_write_block(gen, &buf, start_table, start_table_len);
 
 		// pad diskload2 to the end of last page
 		const int diskload2pad = ((sizeof(diskloadcode2)/sizeof(char) + start_table_len + 0xFF) & 0xFF00) - (sizeof(diskloadcode2)/sizeof(char) + start_table_len);
 		for(i=0;i<diskload2pad;i++) {
-			WRITEBYTE(0x00);
-			checksum ^= 0x00;
+			gen_write_checked_byte(gen, &buf, 0x00);
 		}
 
-		for(i=0;i<sizeof(diskloadcode3)/sizeof(char);i++) {
-			WRITEBYTE(diskloadcode3[i]);
-			checksum ^= diskloadcode3[i];
-		}
+		gen_write_block(gen, &buf, diskloadcode3, sizeof(diskloadcode3)/sizeof(char));
+		gen_write_block(gen, &buf, dosrwts, sizeof(dosrwts)/sizeof(char));
 
-		for(i=0;i<sizeof(dosrwts)/sizeof(char);i++) {
-			WRITEBYTE(dosrwts[i]);
-			checksum ^= dosrwts[i];
-		}
-
-		WRITEBYTE(checksum);
-		if(k8) {
-			appendtone(&buf,770,0,2);
-			appendtone(&buf,2000,0.3,0);
-		}
-		else {
-			appendtone(&buf,2000,0,1);
-			appendtone(&buf,6000,0.1,0);
-		}
+		gen->write_checksum(gen, &buf);
+		gen->write_stop(gen, &buf);
+		gen->write_filler(gen, &buf, 0.1);
 
 		for(i=0;i<numseg;i++) {
-			//appendtone(&buf,6000,1,0);
-
 //timing
 			j=0;
 			if(i>0) {
@@ -1321,30 +1257,23 @@ int main(int argc, char **argv)
 			}
 */
 
-			if(k8)
-				appendtone(&buf,2000,j,0);
-			else
-				appendtone(&buf,6000,j,0);
+			// processing delay filler
+			gen->write_filler(gen, &buf, j);
 
 			registerevent(events,buf.length,"Load Segment @ 8000 BPS");
 
-			checksum = 0xff;
-			for(j=0;j<segments[i].length;j++) {
-				WRITEBYTE(segments[i].data[j]);
-				checksum ^= segments[i].data[j];
-			}
-			WRITEBYTE(checksum);
-			if(k8)
-				//appendtone(&buf,770,0,2);
-				appendtone(&buf,770,0,10);
-			else
-				//appendtone(&buf,2000,0,1);
-				appendtone(&buf,2000,0,10);
+			gen->write_preamble(gen, &buf, 0);
+			gen->write_start(gen, &buf);
+			gen->init_checksum(gen);
+			gen_write_block(gen, &buf, segments[i].data, segments[i].length);
+			gen->write_checksum(gen, &buf);
+			gen->write_stop(gen, &buf);
+			gen->write_filler(gen, &buf, 0.01);
 		}
-		fprintf(stderr,"Times: Data: %f, Inflate: %f, Audio: %f, File: %s\n\n",total_data_time,total_inflate_time,buf.length/(float)rate,segments[0].filename);
+		fprintf(stderr,"Times: Data: %f, Inflate: %f, Audio: %f, File: %s\n\n",total_data_time,total_inflate_time,buf.length/(float)buf.rate,segments[0].filename);
 
 		registerevent(events,buf.length,"Inflate + Exit");
-		printevents(events,rate);
+		printevents(events,buf.rate);
 
 		fprintf(stderr,"To load up and run on your Apple %s, type:\n\n\tLOAD\n\n",modeltypes[model]);
 	}
@@ -1360,9 +1289,9 @@ int main(int argc, char **argv)
 
 	// write it
 	if(outputtype == AIFF)
-		Write_AIFF(ofp,buf.sound,buf.length,rate,bits,amp);
+		Write_AIFF(ofp,buf.sound,buf.length,buf.rate,bits,amp);
 	else if(outputtype == WAVE)
-		Write_WAVE(ofp,buf.sound,buf.length,rate,bits,amp);
+		Write_WAVE(ofp,buf.sound,buf.length,buf.rate,bits,amp);
 
 	fclose(ofp);
 	return 0;
@@ -1775,4 +1704,133 @@ void printevents(event *events, int rate)
 	for(i=0;i<eventnumber;i++)
 		fprintf(stderr,"%06.02f\t%s\n",events[i].timestamp/(float)rate,events[i].label);
 	fprintf(stderr,"\n");
+}
+
+void gen_write_checked_byte(tapegen *gen, outbuf *buf, unsigned char b)
+{	// helper generator method; write and checksum a byte
+	gen->write_byte(gen, buf, b);
+	gen->checksum_byte(gen, b);
+}
+
+void gen_write_block(tapegen *gen, outbuf *buf, unsigned char *data, size_t datalen)
+{	// helper generator method; write and checksum a block of bytes
+	size_t i;
+
+	for(i=0;i<datalen;i++) {
+		gen->write_byte(gen, buf, data[i]);
+		gen->checksum_byte(gen, data[i]);
+	}
+}
+
+void gen_checksum_block(tapegen *gen, unsigned char *data, size_t datalen)
+{	// helper generator method; add a block of bytes to checksum
+	size_t i;
+
+	for(i=0;i<datalen;i++) {
+		gen->checksum_byte(gen, data[i]);
+	}
+}
+
+void gen_init_checksum(tapegen *gen)
+{	// base generator method
+	gen->checksum = 0xff;
+}
+
+void gen_checksum_byte(tapegen *gen, unsigned char b)
+{	// base generator method; add byte to checksum
+	gen->checksum ^= b;
+}
+
+double fmgen_compute_length(tapegen *gen, unsigned char *data, size_t datalen)
+{	// frequency-modulated (FM) base generator method
+	unsigned long ones=0, zeros=0;
+	size_t i, j;
+
+	for(j=0;j<datalen;j++) {
+		unsigned char byte=data[j];
+		for(i=0;i<8;i++) {
+			if(byte & 0x80)
+				ones++;
+			else
+				zeros++;
+			byte <<= 1;
+		}
+	}
+	return ones/(double)gen->freq1 + zeros/(double)gen->freq0;
+}
+
+void gen_write_preamble(tapegen *gen, outbuf *buf, double extra)
+{	// base generator method
+	appendtone(buf, gen->freq_pre, gen->pre_len+extra, 0);
+}
+
+void null_write_start(tapegen *gen, outbuf *buf)
+{	// no-op (null) generator method
+	(void)gen; (void)buf; // suppress warnings
+}
+
+void a1tape_write_start(tapegen *gen, outbuf *buf)
+{	// Apple 1 generator method; start bit
+	appendtone(buf, gen->freq0, 0, 1);
+}
+
+void a2tape_write_start(tapegen *gen, outbuf *buf)
+{	// Apple 2 generator method; start bit
+	// XXX: This reproduces what Apple 2 does but it is not necessary.
+	//    A simple bit 0 (2000Hz full cycle) would work.
+	appendtone(buf, 2500, 0, 0.5);
+	appendtone(buf, gen->freq0, 0, 0.5);
+}
+
+void fmgen_write_stop(tapegen *gen, outbuf *buf)
+{	// frequency-modulated (FM) base generator method; stop signal
+	// NB: 2 cycles to ensure that all three transitions are seen correctly when transmission
+	//   hardware has reversed polarity and thus receiver is half cycle behind.
+	appendtone(buf, gen->freq_end, 0, 2);
+}
+
+void a1tape_write_stop(tapegen *gen, outbuf *buf)
+{	// Apple 1/2 generator method; stop bit
+	// NB: the stop bit ensures that all three transitions of the last data bit are seen correctly
+	appendtone(buf, gen->freq1, 0, 1);
+}
+
+void fmgen_write_byte(tapegen *gen, outbuf *buf, unsigned char b)
+{	// frequency-modulated (FM) base generator method
+	int i;
+	for(i=0;i<8;i++) {
+		int freq = (b & 0x80) != 0 ? gen->freq1 : gen->freq0;
+		appendtone(buf, freq, 0, 1);
+		b <<= 1; // MSB to LSB
+	}
+}
+
+void afm9600_write_byte(tapegen *gen, outbuf *buf, unsigned char b)
+{	// frequency-modulated asymmetric 9600 generator method
+	int i;
+	for(i=0;i<8;i++) {
+		if ((b & 0x80) != 0) {  // asymmetric bit 1: 6KHz half-cycle + 12KHz half-cycle
+			appendtone(buf, gen->freq0/2, 0, 0.5);
+			appendtone(buf, gen->freq0, 0, 0.5);
+		}
+		else {  // symmetric bit 0
+			appendtone(buf, gen->freq0, 0, 1);
+		}
+		b <<= 1; // MSB to LSB
+	}
+}
+
+void gen_write_checksum(tapegen *gen, outbuf *buf)
+{	// base generator method
+	gen->write_byte(gen, buf, gen->checksum);
+}
+
+void null_write_checksum(tapegen *gen, outbuf *buf)
+{	// no-op (null) generator method
+	(void)gen; (void)buf; // suppress warnings
+}
+
+void gen_write_filler(tapegen *gen, outbuf *buf, double time)
+{	// base generator method
+	appendtone(buf, gen->freq_fill, time, 0);
 }
