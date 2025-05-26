@@ -76,6 +76,7 @@ Bugs:
 #include <fake6502.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <ctype.h>
 #include <unistd.h>
 #include <string.h>
@@ -129,7 +130,7 @@ typedef struct event {
 
 unsigned int eventnumber = 0;
 
-void registerevent(event *events, unsigned long int timestamp, char *label);
+void registerevent(event *events, unsigned long int timestamp, const char *format, ...);
 void printevents(event *events, int rate);
 
 typedef struct s {
@@ -1072,7 +1073,7 @@ int main(int argc, char **argv)
 		}
 
 		// write out BASIC stub header
-		registerevent(events,buf.length,"770Hz Preamble + Sync Bit");
+		registerevent(events,buf.length,"%dHz Preamble + Sync Bit",basgen->freq_pre);
 
 		basgen->write_preamble(basgen, &buf, tape);
 		basgen->write_start(basgen, &buf);
@@ -1082,7 +1083,7 @@ int main(int argc, char **argv)
 		header[0] = length & 0xFF;
 		header[1] = length >> 8;
 
-		registerevent(events,buf.length,"BASIC Header + 770Hz Preamble");
+		registerevent(events,buf.length,"BASIC Header + %dHz Preamble",basgen->freq_pre);
 
 		gen_write_block(basgen, &buf, header, 3);
 		basgen->write_checksum(basgen, &buf);
@@ -1093,7 +1094,7 @@ int main(int argc, char **argv)
 		basgen->write_start(basgen, &buf);
 		basgen->init_checksum(basgen);
 
-		registerevent(events,buf.length,"BASIC Stub/Assembly Code @ 1333 BPS");
+		registerevent(events,buf.length,"BASIC Stub/Assembly Code @ %d BPS",basgen->bps);
 
 		// write out basic program
 		gen_write_block(basgen, &buf, basic, sizeof(basic)/sizeof(char));
@@ -1110,7 +1111,7 @@ int main(int argc, char **argv)
 		basgen->write_checksum(basgen, &buf);
 		basgen->write_stop(basgen, &buf);
 
-		registerevent(events,buf.length,"INSTA-DISK Code + DOS Load @ 8000 BPS");
+		registerevent(events,buf.length,"INSTA-DISK Code + DOS Load @ %d BPS",gen->bps);
 
 		// time to compress and compute start location and length
 		// patch loadcode2 with start locations and ETA
@@ -1232,12 +1233,12 @@ int main(int argc, char **argv)
 				// CFFA3000 3.1 failed with IBM 4GB Microdrive (too slow)
 				// Nishida Radio SDISK // (no-format only)
 
-				registerevent(events,buf.length,"Inflate + Write Delay (2000 Hz)");
+				registerevent(events,buf.length,"Inflate + Write Delay (%d Hz)",gen->freq_fill);
 			}
 			if(i==1) {
 				j+=2; // seek time for track 0, just in case
 				if (!noformat) {
-					registerevent(events,buf.length,"Format Track 0 Delay (2000 Hz)");
+					registerevent(events,buf.length,"Format Track 0 Delay (%d Hz)",gen->freq_fill);
 					j+=3; // track 0 format time; determines inter-sector padding
 				}
 			}
@@ -1260,7 +1261,7 @@ int main(int argc, char **argv)
 			// processing delay filler
 			gen->write_filler(gen, &buf, j);
 
-			registerevent(events,buf.length,"Load Segment @ 8000 BPS");
+			registerevent(events,buf.length,"Load Segment @ %d BPS",gen->bps);
 
 			gen->write_preamble(gen, &buf, 0);
 			gen->write_start(gen, &buf);
@@ -1686,12 +1687,17 @@ void write6502(uint16_t address, uint8_t value)
 	ram[address] = value;
 }
 
-void registerevent(event *events, unsigned long int timestamp, char *label)
+void registerevent(event *events, unsigned long int timestamp, const char *format, ...)
 {
+	va_list args;
+	int stored;
+
 	assert(eventnumber < MAXEVENTS);
 
+	va_start(args, /*after*/ format);
 	events[eventnumber].timestamp = timestamp;
-	strcpy(events[eventnumber].label,label);
+	stored = vsprintf(events[eventnumber].label,format,args);
+	assert(stored < sizeof(events[0].label)/sizeof(char));
 
 	eventnumber++;
 }
