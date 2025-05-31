@@ -53,7 +53,7 @@ cc65-2.13.3/bin/cl65: cc65-sources-2.13.3.tar.bz2
 	bunzip2 -c cc65-sources-2.13.3.tar.bz2 | tar xf -
 	(cd cc65-2.13.3; /usr/bin/sed 's!/usr/local!'${PWD}'/cc65-2.13.3!' <make/gcc.mak >Makefile; make -j4 bins || make bins && make install || true)
 
-c2t.h: c2t.h.0 makeheader mon/dos33.rwts.mon asm/*.inc asm/autoload.s asm/diskload2.s asm/diskload3.s asm/diskload8000.s asm/diskload9600.s asm/fastload8000.s asm/fastload9600.s asm/fastloadcd.s asm/inflate.s cc65-2.13.3/bin/cl65
+c2t.h: c2t.h.0 makeheader mon/dos33.rwts.mon asm/*.inc asm/*.s cc65-2.13.3/bin/cl65
 	./makeheader
 
 test: bin/c2t-96h bin/c2t-96h.exe tests/test.md

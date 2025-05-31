@@ -104,6 +104,7 @@ typedef struct outbuf {
 void usage(void);
 char *getext(char *filename);
 void outbuf_init(outbuf *buf, int rate);
+void outbuf_reserve(outbuf *buf, long n);
 void appendtone(outbuf *buf, int freq, double time, double cycles);
 void Write_AIFF(FILE * fptr, double *samples, long nsamples, int nfreq, int bits, double amp);
 void Write_WAVE(FILE * fptr, double *samples, long nsamples, int nfreq, int bits, double amp);
@@ -171,6 +172,8 @@ struct tapegen {
 	const int freq1;	// frequency of bit 1 (FM coding)
 
 	unsigned char checksum;	// current running checksum
+
+	float last_polarity;	// internal generator state
 };
 
 void gen_write_checked_byte(tapegen *gen, outbuf *buf, unsigned char b);
@@ -272,6 +275,24 @@ tapegen cd8820aud = {
 	0.25 /*pre_len*/, 5512 /*pre*/,
 	2000 /*end*/, 5512 /*fill*/,
 	11025 /*freq0*/, 7350 /*freq1*/,
+};
+
+double spm15k_compute_length(tapegen *gen, unsigned char *data, size_t datalen);
+void spm15k_write_start(tapegen *gen, outbuf *buf);
+void spm15k_write_stop(tapegen *gen, outbuf *buf);
+void spm15k_write_byte(tapegen *gen, outbuf *buf, unsigned char b);
+// Polarity-independent synchronous PM (phase-modulated) 15,360 bps coding; using fastload15k
+tapegen spm15360aud = {
+	"SPM/PI-15360",
+	15360 /*bps*/, 48000 /*sampling rate*/,
+	gen_init_checksum, gen_checksum_byte,
+	spm15k_compute_length, gen_write_preamble,
+	spm15k_write_start, spm15k_write_stop,
+	spm15k_write_byte, gen_write_checksum,
+	gen_write_filler,
+	0.25 /*pre_len*/, 4000 /*pre*/,
+	0 /*end*/, 4000 /*fill*/,
+	19200 /*freq0*/, 19200 /*freq1*/,  // informational only
 };
 
 int square = 0;
@@ -1307,6 +1328,25 @@ void outbuf_init(outbuf *buf, int rate)
 	buf->rate = rate;
 }
 
+// ensure there is enough space to store n samples; grow sound buffer if necessary
+void outbuf_reserve(outbuf *buf, long n)
+{
+	// grow capacity of buffer if needed, using size-doubling approach
+	if(buf->capacity < buf->length + n) {
+		long new_cap = buf->capacity;
+		while(new_cap < buf->length + n) {
+			new_cap *= 2;
+		}
+		double *tmp = (double *)realloc(buf->sound, new_cap * sizeof(double));
+		if(tmp == NULL) {
+			fprintf(stderr, "could not grow sound buffer to %ld samples\n", new_cap);
+			abort();
+		}
+		buf->sound = tmp;
+		buf->capacity = new_cap;
+	}
+}
+
 void appendtone(outbuf *buf, int freq, double time, double cycles)
 {
 	int rate = buf->rate;
@@ -1319,26 +1359,9 @@ void appendtone(outbuf *buf, int freq, double time, double cycles)
 	if(n == 0)
 		n=cycles;
 
-/*
-	if((tmp = (double *)realloc(*sound, (*length + n) * sizeof(double))) == NULL)
-		abort();
-	*sound = tmp;
-*/
+	// ensure buffer has space availabe
+	outbuf_reserve(buf, n);
 
-	// grow capacity of buffer if needed, using size-doubling approach
-	if(buf->capacity < length + n) {
-		long new_cap = buf->capacity;
-		while(new_cap < length + n) {
-			new_cap *= 2;
-		}
-		double *tmp = (double *)realloc(buf->sound, new_cap * sizeof(double));
-		if(tmp == NULL)
-			abort();
-		buf->sound = tmp;
-		buf->capacity = new_cap;
-	}
-
-//tmp -> (*sound)
 	/* 
 	   better square code someday, theory here is to use sinewave then square it.
 	   to address sin() == 0, i have to keep track of the last value to determine
@@ -1839,4 +1862,145 @@ void null_write_checksum(tapegen *gen, outbuf *buf)
 void gen_write_filler(tapegen *gen, outbuf *buf, double time)
 {	// base generator method
 	appendtone(buf, gen->freq_fill, time, 0);
+}
+
+void spm15k_write_timed_byte(tapegen *gen, outbuf *buf, unsigned char b, int waitcnt)
+{	// phase-modulated synchronous 15k generator method; format one byte
+	// Byte signal is similar to RS-232 using format 1-8-N-1
+	//   1 start/sync bit [2 samples @ 48Khz] -- receiver syncs to this bit alone
+	//          start bit can have either polarity, opposite to the last bit transmitted
+	//   8 data bits, big-endian [2.5 samples each @ 48Khz] -- receiver reads bits directly at precise intervals
+	//          data bits polarity is wrt/ to start bit: bit 1 has same polarity as start bit, bit 0 is opposite
+	//   1 stop/wait bit [varying, min 3 samples] -- wait state giving receiver time to process the byte
+	//          stop bit has same polarity as last data bit, with minimal signal level.
+	// The actual signal values used were calculated, then hand-tuned experimentally.
+	float signal[2 /*sync*/ + (int)(8*2.5f) /*8 bits*/ + 20 /*stop; max wait*/];
+	int i, s = 0;
+	// NB: polarity flips depending on previous output
+	float polarity = -gen->last_polarity;
+	float prevbit;
+
+	assert(waitcnt <= 20 /*max wait*/);
+
+	// start bit (sync)
+	signal[s++] = 0.82f;
+	signal[s++] = 0.82f;
+
+	prevbit = 1.0f; // start with sync bit polarity
+	for (i = 0; i < 8; ++i, b <<= 1) {
+		float bit = (b & 0x80) > 0 ? 1.0f : -1.0f;
+		if (bit == prevbit) {
+			// same polarity -- sustainment level
+			if ((i & 1) == 0) {
+				// even bit; last sample is shared with next bit
+				signal[s++] = bit * 0.08f;
+				signal[s++] = bit * 0.20f;
+				signal[s] = bit * 0.08f;
+			} else {
+				// odd bit; first sample is shared with previous bit
+				signal[s] = (signal[s] + bit * 0.08f) / 2;
+				s++;
+				signal[s++] = bit * 0.20f;
+				signal[s++] = bit * 0.08f;
+			}
+		} else {
+			// opposite polarity -- energetic transition
+			if ((i & 1) == 0) {
+				// even bit; last sample is shared with next bit
+				signal[s++] = bit * 0.85f;
+				signal[s++] = bit * 0.78f;
+				signal[s] = bit * 0.15f;
+			} else {
+				// odd bit; first sample is shared with previous bit
+				signal[s] = (signal[s] + bit * 0.65f) / 2;
+				s++;
+				signal[s++] = bit * 0.95f;
+				signal[s++] = bit * 0.45f;
+			}
+		}
+		prevbit = bit;
+	}
+
+	// stop bit: sustain last level and give receiver time to process the byte
+	for (i = 0; i < waitcnt; ++i)
+		signal[s++] = prevbit * (0.08f + (i & 1) * 0.12f);
+	// patch the last wait sample
+	signal[s-1] = prevbit * 0.11f;
+
+	// next polarity reverses depending on the last bit
+	gen->last_polarity = prevbit * polarity;
+	// convert to correct polarity and append to buffer
+	outbuf_reserve(buf, s);
+	for (i = 0; i < s; ++i)
+		buf->sound[buf->length++] = signal[i] * polarity;
+}
+
+void spm15k_write_byte(tapegen *gen, outbuf *buf, unsigned char b)
+{	// phase-modulated synchronous 15k generator method; write byte at full speed
+	spm15k_write_timed_byte(gen, buf, b, 3 /*full-speed min wait*/);
+}
+
+double spm15k_compute_length(tapegen *gen, unsigned char *data, size_t datalen)
+{	// phase-modulated synchronous 15k generator method
+	(void)data; // suppress warnings; data values are irrelevant
+	return datalen * (2 + 8*2.5 + 3) / gen->samp_rate;
+}
+
+void spm15k_write_start(tapegen *gen, outbuf *buf)
+{	// phase-modulated synchronous 15k generator method; auto-sync bytes
+	int i;
+
+	// NB: starting polarity does not matter since the receiver will auto-sync to either.
+	//   but the value must be normalized to +/-1.0.
+	gen->last_polarity = -1.0;
+
+	// auto-sync sequence; with relaxed waits for sync
+	// the bare minimum is 5 sync bytes; plus a few for unexpected conditions
+	// NB: values other than 0xFF can be used, but sync waits must then be increased for auto-sync to work.
+	//    0xFF is useful for auto-calibrated variants which may start with improperly timed branches.
+	for (i = 0; i < 10; ++i)
+		spm15k_write_timed_byte(gen, buf, 0xff, 3+2);
+
+	// optional calibration sequence
+	if (0 /*disabled*/)
+	{
+		// calibration start signal; additional wait for calibration processing
+		spm15k_write_timed_byte(gen, buf, 0x0F, 3+4);
+
+		// calibration sequence; 10 extras just in case
+		for (i = 0; i < 2 * 7 /*calspo*/ * 24 /*calrng*/ + 10 /*extras*/; ++i)
+			spm15k_write_timed_byte(gen, buf, 0x55 /*calval*/, 3+4);
+
+		// data auto-sync sequence; also provides extra time for calibration calcs.
+		// NB: final calibration calculations take ~3 bytes time; increase the sync count
+		//   to compensate for any additional processing if necessary.
+		for (i = 0; i < 8; ++i)
+			spm15k_write_timed_byte(gen, buf, 0xff, 3);
+	}
+
+	// data start signal; relaxed wait for data start
+	spm15k_write_timed_byte(gen, buf, 0x00, 3+2);
+}
+
+void spm15k_write_stop(tapegen *gen, outbuf *buf)
+{	// phase-modulated synchronous 15k generator method; stop signal
+	const int waitcnt = 12; // end transmission delay
+	float signal[12 + 5];
+	int i, s = 0;
+	float polarity = gen->last_polarity;
+	// sustain last level and delay the next transition
+	for (i = 0; i < waitcnt; ++i)
+	    signal[s++] = 1.0f * (0.08f + (i & 1) * 0.12f);
+
+	// two energetic transitions to stop the receiver
+	signal[s++] = -1.0f;
+	signal[s++] = -0.60f;
+	signal[s++] = 0.0f;
+	signal[s++] = 1.0f;
+	signal[s++] = 0.60f;
+
+	// convert to correct polarity and append to buffer
+	outbuf_reserve(buf, s);
+	for (i = 0; i < s; ++i)
+		buf->sound[buf->length++] = signal[i] * polarity;
 }

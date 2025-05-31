@@ -18,6 +18,7 @@ header inflate inflatecode 8
 header fastload9600 fastload9600 4
 header fastload8000 fastload8000 4
 header fastloadcd fastloadcd 4
+header fastload15k fastload15k
 header diskload9600 diskload9600 4
 header diskload8000 diskload8000 4
 header diskload2 diskloadcode2 8
