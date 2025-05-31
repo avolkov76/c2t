@@ -1060,11 +1060,11 @@ int main(int argc, char **argv)
 			diskloadcode_len = sizeof(diskload8000)/sizeof(char);
 			gen = &sfm8000aud;
 		}
-		else if(0 /*disabled*/) {
-			// symmetric 9600 variant; unstable
-			diskloadcode = diskload9600;
-			diskloadcode_len = sizeof(diskload9600)/sizeof(char);
-			gen = &sfm9600aud;
+		else if(1 /*enabled*/) {
+			// synchronous PM 15k variant
+			diskloadcode = diskload15k;
+			diskloadcode_len = sizeof(diskload15k)/sizeof(char);
+			gen = &spm15360aud;
 		}
 		else {	// default
 			// asymmetric 9600 variant; not entirely stable
