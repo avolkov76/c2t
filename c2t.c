@@ -780,13 +780,13 @@ int main(int argc, char **argv)
 		int i, j;
 		tapegen *gen, *basgen = &a2tape;
 
-		if(fast && 0 /*disabled*/) {
-			// symmetric 9600 variant; unstable
-			autoloadcode = fastload9600;
-			autoloadcode_len = sizeof(fastload9600)/sizeof(char);
-			gen = &sfm9600aud;
+		if(fast) {
+			// synchronous PM 15k variant
+			autoloadcode = fastload15k;
+			autoloadcode_len = sizeof(fastload15k)/sizeof(char);
+			gen = &spm15360aud;
 		}
-		else if(fast) {
+		else if(fast && 0 /*disabled*/) {
 			// asymmetric 9600 variant; not entirely stable
 			autoloadcode = fastload8000;
 			autoloadcode_len = sizeof(fastload8000)/sizeof(char);
