@@ -21,6 +21,7 @@ header fastloadcd fastloadcd 4
 header fastload15k fastload15k
 header diskload9600 diskload9600 4
 header diskload8000 diskload8000 4
+header diskload15k diskload15k
 header diskload2 diskloadcode2 8
 header diskload3 diskloadcode3 8
 ) > ../c2t.h.1
