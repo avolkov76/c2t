@@ -1506,25 +1506,18 @@ void appendtone(outbuf *buf, int freq, double time, double cycles)
 
 char *getext(char *filename)
 {
-	char stack[256], *rval;
-	int i, sp = 0;
+	char *ext, *rval;
 
-	for(i=strlen(filename)-1;i>=0;i--) {
-		if(filename[i] == '.')
-			break;
-		stack[sp++] = filename[i];
+	ext = strrchr(filename,'.');
+	if(ext == NULL || ext == filename || ext[1] == '\0')
+		return NULL;
+	ext++; // skip the '.'
+
+	rval = strdup(ext);
+	if(rval == NULL) {
+		fprintf(stderr,"could not allocate %d bytes of string space\n",strlen(ext)+1);
+		abort();
 	}
-	stack[sp] = '\0';
-
-	if(sp == strlen(filename) || sp == 0)
-		return(NULL);
-
-	if((rval = (char *)malloc(sp * sizeof(char))) == NULL)
-		; //do error code
-
-	rval[sp] = '\0';
-	for(i=0;i<sp+i;i++)
-		rval[i] = stack[--sp];
 
 	return(rval);
 }
